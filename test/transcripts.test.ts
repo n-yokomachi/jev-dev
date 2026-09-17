@@ -38,7 +38,14 @@ test('loadScenario は全ターンを順に返す', async () => {
   assert.equal(scenario.turns.length, 2);
   assert.equal(scenario.turns[0].user, 'u1');
   assert.equal(scenario.turns[1].phase, 'positive');
-  assert.equal(scenario.turns[0].deltas.sorrow, 0.2);
+});
+
+test('記録された返答と自己申告はターンに載せない', async () => {
+  const dir = await fixtureDir();
+  const scenario = await loadScenario(dir, 'sample_friendly-on_run1');
+  const turn = scenario.turns[0] as Record<string, unknown>;
+  // 判定の入力にも画面にも使わないと決めたものを API の応答に残さない。
+  assert.deepEqual(Object.keys(turn).sort(), ['phase', 'turn', 'user']);
 });
 
 test('loadScenario は id にパス区切りを含む要求を拒む', async () => {

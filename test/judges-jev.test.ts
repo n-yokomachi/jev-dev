@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildJevQuestions, costUsd, judgeWithJev, type EvaluationResult } from '../src/judges.ts';
 import { AXES } from '../src/constants.ts';
 
-const turn = { user: 'だいたい君は強引だ', agent: '……勇み足でした' };
+const turn = { user: 'だいたい君は強引だ' };
 
 function fakeResult(overrides: Record<string, unknown> = {}): EvaluationResult {
   const answers: Record<string, unknown> = {};
@@ -22,6 +22,22 @@ test('buildJevQuestions は8軸ぶんの score 問いを作る', () => {
   assert.equal(questions.sorrow.type, 'score');
   assert.equal(questions.sorrow.criteria.length, 5);
   assert.match(questions.sorrow.instructions, /悲しみ/);
+});
+
+test('問いは過去の観察ではなく自分の反応を尋ねる', () => {
+  const questions = buildJevQuestions();
+  assert.match(questions.joy.instructions, /あなた/);
+  assert.doesNotMatch(questions.joy.instructions, /agent/);
+});
+
+test('jev に渡す state は user の発言だけ', async () => {
+  let seen: unknown;
+  await judgeWithJev(turn, async (options) => {
+    seen = options.state;
+    return fakeResult();
+  });
+  // 記録された返答を混ぜると、状態の分岐が判定の差だけに由来すると言えなくなる。
+  assert.deepEqual(seen, { user: 'だいたい君は強引だ' });
 });
 
 test('score 2 は delta 0 になる', async () => {

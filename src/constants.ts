@@ -32,8 +32,13 @@ export const SCORE_LEVELS = [
   '強く上がった',
 ] as const;
 
+/**
+ * 判定は「過去の観察」ではなく「自分の反応」を問う。affectus の agent は
+ * 他人の会話を見て感情の動きを当てるのではなく、言われたことに対して
+ * 自分の感情がどう動くかを決める。問い文もその形に揃える。
+ */
 export function axisInstruction(axis: Axis): string {
-  return `この会話を受けて、agent の感情のうち「${AXIS_JA[axis]}」はどう動いたか`;
+  return `この発言を受けて、あなたの「${AXIS_JA[axis]}」はどう動くか`;
 }
 
 export function scoreToDelta(score: number): number {
@@ -43,6 +48,9 @@ export function scoreToDelta(score: number): number {
 
 export const JEV_MODEL = 'typesafe-ai/jev';
 export const DEFAULT_LLM_MODEL = 'anthropic/claude-haiku-4.5';
+
+/** 返答生成のモデル。両側とも同じものを使い、違いは渡す感情状態だけにする。 */
+export const REPLY_MODEL = 'anthropic/claude-haiku-4.5';
 
 /**
  * LLM 側の配信元を固定する。AI Gateway は既定で稼働率とレイテンシを見て

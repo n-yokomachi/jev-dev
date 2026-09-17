@@ -1,15 +1,15 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Axis, AxisMap } from './constants.ts';
 import { HttpError } from './http-error.ts';
 
+/**
+ * 画面と判定が使うターン。JSONL には記録された返答（agent）と当時の自己申告
+ * （deltas / axes）も入っているが、どちらも判定の入力にも画面にも使わないので持たない。
+ */
 export interface Turn {
   turn: number;
   phase: string;
   user: string;
-  agent: string;
-  deltas: Partial<Record<Axis, number>>;
-  axes: AxisMap;
 }
 
 export interface Scenario {
@@ -22,11 +22,19 @@ export interface ScenarioSummary {
   turnCount: number;
 }
 
+/**
+ * 使う項目だけに落とす。読み捨てた項目を API の応答に載せたままにすると、
+ * 「画面に出さない」と決めたものを画面がまた拾える状態が残る。
+ * data/transcripts のファイル自体には手を入れない。
+ */
 function parseLines(text: string): Turn[] {
   return text
     .split('\n')
     .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as Turn);
+    .map((line) => {
+      const row = JSON.parse(line) as Turn;
+      return { turn: row.turn, phase: row.phase, user: row.user };
+    });
 }
 
 export async function listScenarios(dir: string): Promise<ScenarioSummary[]> {

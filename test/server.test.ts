@@ -27,6 +27,11 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
       rawScore: {}, latencyMs: 2140,
       usage: { inputTokens: 412, outputTokens: 96 }, costUsd: 0.00178,
     }),
+    generateReply: async () => ({
+      model: 'anthropic/claude-haiku-4.5', provider: 'anthropic',
+      reply: '……少し、言葉を選ばせてください。', latencyMs: 1180,
+      usage: { inputTokens: 520, outputTokens: 64 }, costUsd: 0.00084,
+    }),
     applyToAffectus: async () => zeroAxes(),
     readAffectus: async () => zeroAxes(),
     resetAffectus: async () => {},
@@ -65,7 +70,7 @@ test('POST /api/judge/jev は判定結果に適用後の軸を足して返す', 
   const res = await fetch(`${base}/api/judge/jev`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ user: 'u', agent: 'a' }),
+    body: JSON.stringify({ user: 'u' }),
   });
   const body = await res.json();
   assert.equal(res.status, 200);
@@ -84,7 +89,7 @@ test('POST /api/judge/llm は jev とは別の状態に適用する', async () =
   await fetch(`${base}/api/judge/llm`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ user: 'u', agent: 'a' }),
+    body: JSON.stringify({ user: 'u' }),
   });
   assert.deepEqual(seen, ['llm']);
   shutdown(server);
@@ -99,6 +104,129 @@ test('user が無い POST は 400 を返す', async () => {
     body: JSON.stringify({ agent: 'a' }),
   });
   assert.equal(res.status, 400);
+  shutdown(server);
+});
+
+test('判定は user だけで通る。agent は要らない', async () => {
+  let seen: unknown;
+  const server = createServer(deps({
+    judgeJev: async (turn) => {
+      seen = turn;
+      return {
+        model: 'typesafe-ai/jev', provider: 'typesafe-ai', deltas: zeroAxes(), confidence: {},
+        rawScore: {}, latencyMs: 1, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0,
+      };
+    },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/judge/jev`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u' }),
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(seen, { user: 'u' });
+  shutdown(server);
+});
+
+test('POST /api/reply は返答と生成のレイテンシを返す', async () => {
+  let seen: unknown;
+  const server = createServer(deps({
+    generateReply: async (input) => {
+      seen = input;
+      return {
+        model: 'anthropic/claude-haiku-4.5', provider: 'anthropic',
+        reply: 'そう、ですか。', latencyMs: 1180,
+        usage: { inputTokens: 520, outputTokens: 64 }, costUsd: 0.00084,
+      };
+    },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', axes: { ...zeroAxes(), sorrow: 0.4 } }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(body.reply, 'そう、ですか。');
+  // 生成の時間は判定とは別の数字として返る。
+  assert.equal(body.latencyMs, 1180);
+  assert.deepEqual(seen, { user: 'u', axes: { ...zeroAxes(), sorrow: 0.4 } });
+  shutdown(server);
+});
+
+test('POST /api/reply は axes が無ければ 400 で、生成を呼ばない', async () => {
+  let called = 0;
+  const server = createServer(deps({
+    generateReply: async () => { called += 1; throw new Error('呼ばれてはいけない'); },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u' }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal(called, 0, '生成は呼ばれないこと');
+  shutdown(server);
+});
+
+test('POST /api/reply は欠けた軸を 0 で埋めずに 400 を返す', async () => {
+  const server = createServer(deps());
+  const base = await listen(server);
+  const partial = { ...zeroAxes() } as Record<string, number>;
+  delete partial.disgust;
+  const res = await fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', axes: partial }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 400);
+  assert.match(body.error, /disgust/);
+  shutdown(server);
+});
+
+test('POST /api/reply は axes が配列なら 400 を返す', async () => {
+  const server = createServer(deps());
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', axes: [0, 0, 0, 0, 0, 0, 0, 0] }),
+  });
+  assert.equal(res.status, 400);
+  shutdown(server);
+});
+
+test('POST /api/reply は user が無ければ 400 を返す', async () => {
+  const server = createServer(deps());
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ axes: zeroAxes() }),
+  });
+  assert.equal(res.status, 400);
+  shutdown(server);
+});
+
+test('POST /api/reply の想定外の失敗は 500 で、内部の詳細を漏らさない', async () => {
+  const server = createServer(deps({
+    generateReply: async () => {
+      throw new Error("ENOENT: no such file or directory, open '/Users/someone/jev-dev/state/jev.json'");
+    },
+  }));
+  const base = await listen(server);
+  const res = await quiet(() => fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', axes: zeroAxes() }),
+  }));
+  const body = await res.json();
+  assert.equal(res.status, 500);
+  assert.ok(!body.error.includes('/Users'), `パスが漏れている: ${body.error}`);
   shutdown(server);
 });
 
@@ -226,7 +354,7 @@ test('llmModels に無いモデルは 400 で、判定を呼ばない', async ()
   const res = await fetch(`${base}/api/judge/llm`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ user: 'u', agent: 'a', model: 'anthropic/claude-opus-5' }),
+    body: JSON.stringify({ user: 'u', model: 'anthropic/claude-opus-5' }),
   });
   assert.equal(res.status, 400);
   assert.equal(called, 0, '判定は呼ばれないこと');
@@ -248,7 +376,7 @@ test('llmModels にあるモデルはそのまま判定に渡る', async () => {
   const res = await fetch(`${base}/api/judge/llm`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ user: 'u', agent: 'a', model: 'anthropic/claude-sonnet-5' }),
+    body: JSON.stringify({ user: 'u', model: 'anthropic/claude-sonnet-5' }),
   });
   assert.equal(res.status, 200);
   assert.equal(seen, 'anthropic/claude-sonnet-5');

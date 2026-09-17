@@ -6,9 +6,15 @@ import {
 } from './constants.ts';
 import { confidenceFromProbabilities } from './confidence.ts';
 
+/**
+ * 判定の入力。user の発言のみを渡す。
+ *
+ * 記録された返答（agent）は含めない。affectus の agent は他人の会話を見て
+ * 感情の動きを当てるのではなく、言われたことに対して自分の感情がどう動くかを決める。
+ * 両側が同じ入力を受け取ることで、状態の分岐は判定の違いだけに由来すると言い切れる。
+ */
 export interface TurnInput {
   user: string;
-  agent: string;
 }
 
 export interface Usage {
@@ -88,7 +94,7 @@ function confidenceFrom(probs: Record<string, number> | undefined): number | und
   return confidenceFromProbabilities(values);
 }
 
-function normalizeUsage(usage: EvaluationResult['usage']): Usage {
+export function normalizeUsage(usage: EvaluationResult['usage']): Usage {
   return {
     inputTokens: usage?.inputTokens ?? 0,
     outputTokens: usage?.outputTokens ?? 0,
@@ -102,7 +108,7 @@ export async function judgeWithJev(
   // 問いと state の構築は計測区間の外で行う。設計書が latencyMs を
   // 「モデル呼び出しの区間のみ」と定めており、LLM 側も同じ形にしてあるため。
   const questions = buildJevQuestions();
-  const state = { user: turn.user, agent: turn.agent };
+  const state = { user: turn.user };
 
   const started = performance.now();
   const result = await evaluateFn({ model: JEV_MODEL, state, questions });
@@ -167,8 +173,9 @@ export type GenerateObjectFn = (options: {
 export function llmInstruction(): string {
   const lines = AXES.map((axis) => `- ${axis}（${AXIS_JA[axis]}）`).join('\n');
   return [
-    '次の会話ターンを読み、agent の感情が各軸でどう動いたかを答えてください。',
-    '値は -1.0 から 1.0 の範囲で、上がったなら正、下がったなら負、変化がなければ 0 とします。',
+    'user の発言を読み、それを受けてあなた自身の感情が各軸でどう動くかを答えてください。',
+    '値は -1.0 から 1.0 の範囲で、上がるなら正、下がるなら負、変化がなければ 0 とします。',
+    '答えるのは過去の観察ではなく、この発言に対するあなた自身の反応です。',
     '',
     '軸:',
     lines,
@@ -188,7 +195,7 @@ export async function judgeWithLlm(
   const prompt = [
     llmInstruction(),
     '',
-    JSON.stringify({ user: turn.user, agent: turn.agent }, null, 2),
+    JSON.stringify({ user: turn.user }, null, 2),
   ].join('\n');
 
   const started = performance.now();

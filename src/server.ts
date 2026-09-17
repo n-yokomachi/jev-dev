@@ -1,13 +1,19 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { experimental_evaluate as evaluate, generateObject } from 'ai';
-import { DEFAULT_LLM_MODEL, LLM_MODELS, PROJECT_ROOT, TRANSCRIPT_DIR, type AxisMap } from './constants.ts';
+import { experimental_evaluate as evaluate, generateObject, generateText } from 'ai';
+import {
+  AXES, DEFAULT_LLM_MODEL, LLM_MODELS, PROJECT_ROOT, TRANSCRIPT_DIR, type AxisMap,
+} from './constants.ts';
 import { listScenarios, loadScenario, type Scenario, type ScenarioSummary } from './transcripts.ts';
 import {
   judgeWithJev, judgeWithLlm,
   type EvaluateFn, type GenerateObjectFn, type JudgeOutcome, type TurnInput,
 } from './judges.ts';
+import {
+  generateReply,
+  type GenerateTextFn, type ReplyInput, type ReplyOutcome,
+} from './reply.ts';
 import { feel, getAxes, resetState, type AffectusEnv } from './affectus.ts';
 import { HttpError } from './http-error.ts';
 
@@ -21,6 +27,7 @@ export interface ServerDeps {
   loadScenario: (dir: string, id: string) => Promise<Scenario>;
   judgeJev: (turn: TurnInput) => Promise<JudgeOutcome>;
   judgeLlm: (turn: TurnInput, model?: string) => Promise<JudgeOutcome>;
+  generateReply: (input: ReplyInput) => Promise<ReplyOutcome>;
   applyToAffectus: (side: Side, deltas: AxisMap) => Promise<AxisMap>;
   readAffectus: (side: Side) => Promise<AxisMap>;
   resetAffectus: (side: Side) => Promise<void>;
@@ -102,9 +109,8 @@ async function handleJudge(
 ): Promise<void> {
   const body = await readBody(req);
   const user = body.user;
-  const agent = body.agent;
-  if (typeof user !== 'string' || typeof agent !== 'string') {
-    throw new HttpError(400, 'user と agent は必須の文字列です');
+  if (typeof user !== 'string') {
+    throw new HttpError(400, 'user は必須の文字列です');
   }
 
   let model: string | undefined;
@@ -117,12 +123,51 @@ async function handleJudge(
     model = body.model;
   }
 
-  const turn: TurnInput = { user, agent };
+  const turn: TurnInput = { user };
   const outcome = side === 'jev'
     ? await deps.judgeJev(turn)
     : await deps.judgeLlm(turn, model);
   const axes = await deps.applyToAffectus(side, outcome.deltas);
   sendJson(res, 200, { ...outcome, axes });
+}
+
+/**
+ * 生成に渡す感情状態を検証する。欠けた軸を 0 で埋めない。
+ * 0 は「その次元の不在」という別の状態であり、黙って埋めると生成側が
+ * 実際とは違う感情を読んだ返答を返す。
+ */
+function parseAxesBody(value: unknown): AxisMap {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new HttpError(400, 'axes は8軸の数値を持つオブジェクトです');
+  }
+  const record = value as Record<string, unknown>;
+  const axes = {} as AxisMap;
+  for (const axis of AXES) {
+    const v = record[axis];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      throw new HttpError(400, `axes に軸 ${axis} の数値がありません`);
+    }
+    axes[axis] = v;
+  }
+  return axes;
+}
+
+/**
+ * 返答の生成。判定が返ったあとに走る別フェーズなので、
+ * 判定の latencyMs には入らず、自分の latencyMs を持つ。
+ */
+async function handleReply(
+  deps: ServerDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const body = await readBody(req);
+  const user = body.user;
+  if (typeof user !== 'string') {
+    throw new HttpError(400, 'user は必須の文字列です');
+  }
+  const axes = parseAxesBody(body.axes);
+  sendJson(res, 200, await deps.generateReply({ user, axes }));
 }
 
 export function createServer(deps: ServerDeps) {
@@ -146,6 +191,10 @@ export function createServer(deps: ServerDeps) {
         }
         if (req.method === 'POST' && path === '/api/judge/llm') {
           await handleJudge(deps, 'llm', req, res);
+          return;
+        }
+        if (req.method === 'POST' && path === '/api/reply') {
+          await handleReply(deps, req, res);
           return;
         }
         if (req.method === 'GET' && path === '/api/models') {
@@ -199,6 +248,7 @@ export function productionDeps(): ServerDeps {
     judgeJev: (turn) => judgeWithJev(turn, evaluate as unknown as EvaluateFn),
     judgeLlm: (turn, model) =>
       judgeWithLlm(turn, generateObject as unknown as GenerateObjectFn, model ?? DEFAULT_LLM_MODEL),
+    generateReply: (input) => generateReply(input, generateText as unknown as GenerateTextFn),
     applyToAffectus: (side, deltas) => feel(envFor(side), deltas),
     readAffectus: (side) => getAxes(envFor(side)),
     resetAffectus: (side) => resetState(envFor(side)),

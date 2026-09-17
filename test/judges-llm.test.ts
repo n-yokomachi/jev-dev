@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { judgeWithLlm, llmInstruction } from '../src/judges.ts';
 import { AXES } from '../src/constants.ts';
 
-const turn = { user: 'だいたい君は強引だ', agent: '……勇み足でした' };
+const turn = { user: 'だいたい君は強引だ' };
 
 function fakeObject(): Record<string, number> {
   const o: Record<string, number> = {};
@@ -16,6 +16,22 @@ function fakeObject(): Record<string, number> {
 test('llmInstruction は8軸すべてを列挙する', () => {
   const text = llmInstruction();
   for (const axis of AXES) assert.match(text, new RegExp(axis));
+});
+
+test('llmInstruction は過去の観察ではなく自分の反応を求める', () => {
+  assert.match(llmInstruction(), /あなた自身/);
+});
+
+test('LLM に渡す prompt は user の発言だけを含む', async () => {
+  let seen = '';
+  await judgeWithLlm({ user: 'だいたい君は強引だ' }, async (options) => {
+    seen = options.prompt;
+    return { object: fakeObject(), usage: { inputTokens: 0, outputTokens: 0 } };
+  });
+  assert.match(seen, /だいたい君は強引だ/);
+  // 記録された返答は入力に含めない。state の JSON は user の1項目だけになる。
+  assert.match(seen, /"user":/);
+  assert.doesNotMatch(seen, /"agent":/);
 });
 
 test('LLM の出力をそのままデルタとして使う', async () => {

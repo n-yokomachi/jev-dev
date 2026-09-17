@@ -202,8 +202,15 @@ export async function judgeWithLlm(
 
   const deltas = {} as AxisMap;
   for (const axis of AXES) {
-    // DeltaSchema が8軸すべてを必須にしており、generateObject が返す前に検証する。
-    deltas[axis] = clampDelta(result.object[axis]);
+    const value = result.object[axis];
+    // DeltaSchema が8軸すべてを必須にしており、generateObject が返す前に検証するので、
+    // ここは通常到達しない。それでも既定値では埋めない。clampDelta は非有限値を 0 に
+    // 丸めるため、欠けた軸が「変化なし」として通り、比較データが静かに壊れる。
+    // jev 側と同じく、軸名を挙げて投げる。
+    if (!Number.isFinite(value)) {
+      throw new Error(`LLM の応答に軸 ${axis} の数値がありません`);
+    }
+    deltas[axis] = clampDelta(value);
   }
 
   const usage = normalizeUsage(result.usage);

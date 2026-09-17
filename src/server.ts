@@ -48,11 +48,18 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   if (chunks.length === 0) return {};
+  let parsed: unknown;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     throw new HttpError(400, 'リクエストボディの JSON が不正です');
   }
+  // JSON.parse は null もリテラルとして通す。そのまま返すと呼び出し側の
+  // プロパティ読み出しが投げ、クライアントの誤りがサーバーの故障として 500 になる。
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new HttpError(400, 'リクエストボディは JSON オブジェクトである必要があります');
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function serveStatic(res: ServerResponse, pathname: string): Promise<void> {
@@ -77,7 +84,10 @@ async function loadScenarioOrFail(deps: ServerDeps, encodedId: string): Promise<
   try {
     return await deps.loadScenario(deps.transcriptDir, id);
   } catch (error) {
-    // ファイルが無いのは「見つからない」であってサーバーの故障ではない。
+    // status の分担: 不正な id は transcripts.ts が HttpError(400) を投げ、
+    // ファイルが無い場合は ENOENT のまま上がってくる。ファイルが無いのは
+    // 「見つからない」であってサーバーの故障ではないので、404 への変換はここが持つ。
+    // この変換を消すと「見つからない」が 500 になる。
     // ENOENT の message には絶対パスが載るので、そのままでは返さない。
     if (errnoCode(error) === 'ENOENT') throw new HttpError(404, 'シナリオが見つかりません');
     throw error;

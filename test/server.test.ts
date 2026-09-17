@@ -190,6 +190,18 @@ test('壊れた JSON ボディは 400 を返す', async () => {
   shutdown(server);
 });
 
+test('JSON の null ボディは 400 を返す', async () => {
+  const server = createServer(deps());
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/judge/jev`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: 'null',
+  });
+  assert.equal(res.status, 400);
+  shutdown(server);
+});
+
 test('想定外の失敗は 500 を返し、パスを漏らさない', async () => {
   const server = createServer(deps({
     listScenarios: async () => {

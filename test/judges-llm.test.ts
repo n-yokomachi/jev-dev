@@ -82,3 +82,21 @@ test('レンジ外の値は -1〜1 に丸められる', async () => {
   assert.equal(out.deltas.anger, 1);
   assert.equal(out.deltas.fear, -1);
 });
+
+test('軸が欠けていれば軸名を挙げて投げる', async () => {
+  const object = fakeObject();
+  delete object.disgust;
+  await assert.rejects(
+    () => judgeWithLlm(turn, async () => ({ object, usage: { inputTokens: 0, outputTokens: 0 } })),
+    /disgust/,
+  );
+});
+
+test('数値でない軸は投げる。0 に丸めて「変化なし」にしない', async () => {
+  const object = fakeObject();
+  object.anger = Number.NaN;
+  await assert.rejects(
+    () => judgeWithLlm(turn, async () => ({ object, usage: { inputTokens: 0, outputTokens: 0 } })),
+    /anger/,
+  );
+});

@@ -2333,7 +2333,9 @@ if [ -d "$AFFECTUS_SRC" ] && command -v go >/dev/null 2>&1; then
   rm -rf "$TMP"
   echo "universal binary: $(lipo -archs "$STAGE/bin/affectus")"
 else
-  echo "affectus のソースか go が無いため、手元の bin/affectus をそのまま同梱します"
+  echo "警告: affectus のソースか go が無いため、手元の bin/affectus をそのまま同梱します。"
+  echo "警告: このバイナリは $(lipo -archs bin/affectus 2>/dev/null || uname -m) 専用です。"
+  echo "警告: 他のアーキテクチャの Mac では動きません。可搬な zip が要るなら Go を入れて再実行してください。"
   cp bin/affectus "$STAGE/bin/affectus"
 fi
 

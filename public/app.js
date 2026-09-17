@@ -190,7 +190,11 @@ async function loadScenario(id) {
   el('turn-agent').textContent = '—';
   el('self-report').textContent = '当時の自己申告：—';
   el('l1').textContent = '—';
-  for (const side of ['llm', 'jev']) clearSide(side);
+  for (const side of ['llm', 'jev']) {
+    // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
+    el(`panel-${side}`).classList.remove('pending');
+    clearSide(side);
+  }
   updateProgress();
 }
 
@@ -246,7 +250,11 @@ el('reset').addEventListener('click', async () => {
   drawWheel(el('wheel-llm'), zero);
   drawWheel(el('wheel-jev'), zero);
   state.maxLatency = 1;
-  for (const side of ['llm', 'jev']) clearSide(side);
+  for (const side of ['llm', 'jev']) {
+    // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
+    el(`panel-${side}`).classList.remove('pending');
+    clearSide(side);
+  }
 });
 
 el('scenario').addEventListener('change', async (event) => {

@@ -56,6 +56,7 @@ node --env-file=.env.local src/server.ts
 | `public/` | 画面 |
 | `bin/` | affectus バイナリ |
 | `HANDOFF.html` | 受け取った側向けの引き継ぎ資料（zip に同梱） |
+| `EXPLAINER.html` | affectus と処理フローの図解（zip に同梱） |
 | `state/` | 2つの感情状態（`setup.sh` が生成） |
 
 ## テスト

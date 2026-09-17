@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jev-dev affectus — これは何をしているのか</title>
+
+<style>
+  :root {
+    --ground: #f2f3f5;
+    --panel: #ffffff;
+    --line: #d9dde2;
+    --line-soft: #e8ebef;
+    --ink: #161b21;
+    --ink-soft: #5c6773;
+    --llm: #b06a00;
+    --jev: #00795c;
+    --accent: #2f5d8a;
+
+    --joy: #ffd93d;
+    --acceptance: #a8e05f;
+    --fear: #4caf50;
+    --surprise: #4fc3f7;
+    --sorrow: #3f51b5;
+    --disgust: #9c27b0;
+    --anger: #e53935;
+    --expectancy: #fb8c00;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #07090c;
+      --panel: #0d1117;
+      --line: #1d2530;
+      --line-soft: #151c25;
+      --ink: #c9d4e0;
+      --ink-soft: #77828f;
+      --llm: #ffb84d;
+      --jev: #4dffb8;
+      --accent: #7fb2e5;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #07090c;
+    --panel: #0d1117;
+    --line: #1d2530;
+    --line-soft: #151c25;
+    --ink: #c9d4e0;
+    --ink-soft: #77828f;
+    --llm: #ffb84d;
+    --jev: #4dffb8;
+    --accent: #7fb2e5;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.85;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 64px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+  }
+
+  .lede { color: var(--ink-soft); margin: 0; max-width: 34rem; }
+
+  h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  section > p { margin: 0 0 14px; }
+  section > p:last-child { margin-bottom: 0; }
+
+  .rule { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+  /* --- 8軸 --- */
+  .axes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line-soft);
+    margin-top: 18px;
+  }
+  .axis {
+    background: var(--panel);
+    padding: 11px 14px;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    text-align: left;
+  }
+  .swatch {
+    width: 9px; height: 9px; flex: none;
+    border-radius: 50%;
+    transform: translateY(1px);
+  }
+  .axis b { font-weight: 500; font-size: 0.9rem; }
+  .axis span {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--ink-soft);
+  }
+
+  /* --- フロー --- */
+  .flow { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
+
+  .step {
+    display: grid;
+    grid-template-columns: 2.2rem 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .num {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    padding-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .step h3 { font-size: 0.97rem; font-weight: 700; margin: 0 0 3px; }
+  .step p { margin: 0; color: var(--ink-soft); font-size: 0.92rem; }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .side {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top-width: 2px;
+    padding: 12px 14px;
+  }
+  .side.llm { border-top-color: var(--llm); }
+  .side.jev { border-top-color: var(--jev); }
+  .side .who {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    display: block;
+    margin-bottom: 5px;
+  }
+  .side.llm .who { color: var(--llm); }
+  .side.jev .who { color: var(--jev); }
+  .side p { margin: 0; font-size: 0.86rem; line-height: 1.7; color: var(--ink-soft); }
+
+  /* --- 図解 --- */
+  .fig { margin: 24px 0 0; }
+  .fig svg { width: 100%; height: auto; display: block; }
+  .fig .box { fill: var(--panel); stroke: var(--line); }
+  .fig .port { fill: none; stroke: var(--accent); }
+  .fig .wire { stroke: var(--accent); fill: none; stroke-width: 1.5; }
+  .fig .track { fill: var(--line-soft); }
+  .fig text { font-family: var(--sans); fill: var(--ink); }
+  .fig .mono { font-family: var(--mono); }
+  .fig .dim { fill: var(--ink-soft); }
+  .fig .acc { fill: var(--accent); }
+  .fig figcaption {
+    color: var(--ink-soft);
+    font-size: 0.84rem;
+    line-height: 1.75;
+    margin-top: 12px;
+  }
+
+  /* --- 動機 --- */
+  .why {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--accent);
+    padding: 20px 22px;
+    margin-top: 18px;
+  }
+  .why p { margin: 0 0 12px; font-size: 0.95rem; }
+  .why p:last-child { margin-bottom: 0; }
+  .why strong { font-weight: 700; }
+
+  @media (max-width: 560px) {
+    .split { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 1.6rem 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">explainer</span>
+    <h1>jev-dev affectus</h1>
+    <p class="lede">
+      LLM と jev のレスポンスと精度を分析するためのデモです。
+      同じ発言を両者に判定させ、判定のずれと応答速度を並べて見比べます。
+    </p>
+  </header>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">affectus とは</span>
+    <h2>感情の状態だけを持つ道具</h2>
+    <p>
+      affectus は LLM エージェント用の感情状態エンジンです。プルチックの8感情を
+      それぞれ 0.0〜1.0 の値として保持し、時間が経つと baseline に向かって減衰します。
+    </p>
+    <p>
+      特徴は、<strong>数値の解釈を一切しない</strong>ことです。affectus が返すのは8つの数字だけで、
+      「いまは喜びより悲しみが強い」と読むのも、それを口調に反映させるのも LLM の仕事。
+      状態を持つ側と、意味を与える側を分けてあります。
+    </p>
+
+    <div class="axes">
+      <div class="axis"><span class="swatch" style="background:var(--joy)"></span><b>喜び</b><span>joy</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--acceptance)"></span><b>受容</b><span>acceptance</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--fear)"></span><b>恐れ</b><span>fear</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--surprise)"></span><b>驚き</b><span>surprise</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--sorrow)"></span><b>悲しみ</b><span>sorrow</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--disgust)"></span><b>嫌悪</b><span>disgust</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--anger)"></span><b>怒り</b><span>anger</span></div>
+      <div class="axis"><span class="swatch" style="background:var(--expectancy)"></span><b>期待</b><span>expectancy</span></div>
+    </div>
+
+    <figure class="fig">
+      <svg viewBox="0 0 660 308" role="img"
+        aria-label="affectus の図解。左から変動値を入れ、中央の入れ物が8軸の数値を保持し、右へ現在値を取り出す">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+
+        <!-- 入れる -->
+        <text class="mono acc" x="76" y="96" font-size="11" text-anchor="middle">入れる</text>
+        <rect class="port" x="8" y="110" width="136" height="58" rx="8"/>
+        <text class="mono" x="76" y="136" font-size="14" text-anchor="middle">feel</text>
+        <text class="dim" x="76" y="155" font-size="11" text-anchor="middle">変動値 −1.0〜1.0</text>
+        <path class="wire" d="M150,139 L202,139" marker-end="url(#ah)"/>
+
+        <!-- 入れ物 -->
+        <rect class="box" x="210" y="48" width="240" height="204" rx="10" stroke-width="2"/>
+        <text class="mono" x="330" y="76" font-size="14" text-anchor="middle">affectus</text>
+        <text class="dim" x="438" y="76" font-size="10" text-anchor="end">値は例</text>
+      <circle cx="228" cy="92" r="4" fill="var(--joy)"/>
+      <text x="242" y="96" font-size="12">喜び</text>
+      <rect class="track" x="300" y="86" width="96" height="8" rx="2"/>
+      <rect x="300" y="86" width="59.5" height="8" rx="2" fill="var(--joy)"/>
+      <text class="mono dim" x="440" y="96" font-size="11" text-anchor="end">0.62</text>
+      <circle cx="228" cy="110" r="4" fill="var(--acceptance)"/>
+      <text x="242" y="114" font-size="12">受容</text>
+      <rect class="track" x="300" y="104" width="96" height="8" rx="2"/>
+      <rect x="300" y="104" width="39.4" height="8" rx="2" fill="var(--acceptance)"/>
+      <text class="mono dim" x="440" y="114" font-size="11" text-anchor="end">0.41</text>
+      <circle cx="228" cy="128" r="4" fill="var(--fear)"/>
+      <text x="242" y="132" font-size="12">恐れ</text>
+      <rect class="track" x="300" y="122" width="96" height="8" rx="2"/>
+      <rect x="300" y="122" width="7.7" height="8" rx="2" fill="var(--fear)"/>
+      <text class="mono dim" x="440" y="132" font-size="11" text-anchor="end">0.08</text>
+      <circle cx="228" cy="146" r="4" fill="var(--surprise)"/>
+      <text x="242" y="150" font-size="12">驚き</text>
+      <rect class="track" x="300" y="140" width="96" height="8" rx="2"/>
+      <rect x="300" y="140" width="21.1" height="8" rx="2" fill="var(--surprise)"/>
+      <text class="mono dim" x="440" y="150" font-size="11" text-anchor="end">0.22</text>
+      <circle cx="228" cy="164" r="4" fill="var(--sorrow)"/>
+      <text x="242" y="168" font-size="12">悲しみ</text>
+      <rect class="track" x="300" y="158" width="96" height="8" rx="2"/>
+      <rect x="300" y="158" width="14.4" height="8" rx="2" fill="var(--sorrow)"/>
+      <text class="mono dim" x="440" y="168" font-size="11" text-anchor="end">0.15</text>
+      <circle cx="228" cy="182" r="4" fill="var(--disgust)"/>
+      <text x="242" y="186" font-size="12">嫌悪</text>
+      <rect class="track" x="300" y="176" width="96" height="8" rx="2"/>
+      <rect x="300" y="176" width="2.9" height="8" rx="2" fill="var(--disgust)"/>
+      <text class="mono dim" x="440" y="186" font-size="11" text-anchor="end">0.03</text>
+      <circle cx="228" cy="200" r="4" fill="var(--anger)"/>
+      <text x="242" y="204" font-size="12">怒り</text>
+      <rect class="track" x="300" y="194" width="96" height="8" rx="2"/>
+      <rect x="300" y="194" width="4.8" height="8" rx="2" fill="var(--anger)"/>
+      <text class="mono dim" x="440" y="204" font-size="11" text-anchor="end">0.05</text>
+      <circle cx="228" cy="218" r="4" fill="var(--expectancy)"/>
+      <text x="242" y="222" font-size="12">期待</text>
+      <rect class="track" x="300" y="212" width="96" height="8" rx="2"/>
+      <rect x="300" y="212" width="52.8" height="8" rx="2" fill="var(--expectancy)"/>
+      <text class="mono dim" x="440" y="222" font-size="11" text-anchor="end">0.55</text>
+        <text class="dim" x="330" y="240" font-size="11" text-anchor="middle">8軸をまとめて1つの状態として持つ</text>
+
+        <!-- 取り出す -->
+        <path class="wire" d="M458,139 L510,139" marker-end="url(#ah)"/>
+        <text class="mono acc" x="583" y="96" font-size="11" text-anchor="middle">取り出す</text>
+        <rect class="port" x="514" y="110" width="138" height="58" rx="8"/>
+        <text class="mono" x="583" y="136" font-size="14" text-anchor="middle">get</text>
+        <text class="dim" x="583" y="155" font-size="11" text-anchor="middle">現在値 0.0〜1.0</text>
+
+        <!-- 減衰 -->
+        <path class="wire" stroke-dasharray="3 3"
+          d="M260,266 C260,286 400,286 400,266" marker-end="url(#ah)"/>
+        <text class="dim" x="330" y="296" font-size="11" text-anchor="middle">
+          読み出すたびに baseline へ少し戻る（減衰）
+        </text>
+      </svg>
+      <figcaption>
+        感情の入れ物がひとつあって、そこに数値を出し入れするだけの道具です。
+        入れるのは「この発言でどう動くか」の変動値、取り出すのは積み上がった現在値。
+        <strong>どう動かすかを決めるのも、取り出した数値を言葉に変えるのも外側の仕事</strong>で、
+        affectus はその間で状態を持ち続けます。
+      </figcaption>
+    </figure>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">処理フロー</span>
+    <h2>1ターンで起きること</h2>
+
+    <div class="flow">
+      <div class="step">
+        <div class="num">01</div>
+        <div>
+          <h3>LLM / jev が現在の感情と発言を受け取る</h3>
+          <p>
+            いまの8軸の値と、user が言った一文。両方に同じ形で渡します。
+            既に怒りが高ければ、さらに煽られても伸びしろは小さい — その依存を含めて判定させます。
+          </p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">02</div>
+        <div>
+          <h3>それぞれが感情の変動値を返す</h3>
+          <p>8軸それぞれ −1.0〜1.0 で、この発言を受けて感情がどう動くかを答えます。</p>
+          <div class="split">
+            <div class="side llm">
+              <span class="who">LLM</span>
+              <p>構造化出力で8軸の数値を一度に返す。文章を書ける普通のモデル。</p>
+            </div>
+            <div class="side jev">
+              <span class="who">jev</span>
+              <p>8問を1リクエストで並列に。文章は一切生成しない。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">03</div>
+        <div>
+          <h3>それぞれレスポンスからの感情パラメータを更新</h3>
+          <p>返ってきた変動値を、別々の affectus に適用します。状態ファイルが2つあり、ターンを重ねるごとに離れていきます。</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">04</div>
+        <div>
+          <h3>変更された感情パラメータをもとに LLM が回答生成する</h3>
+          <p>
+            各側の8軸を読ませて返答を書かせます。両側とも同じモデル・同じ人格・同じ指示文で、
+            <strong>違うのは渡す感情パラメータだけ</strong>。返答の差は判定の差にだけ由来します。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">jev の答え方</span>
+    <h2>1つ選ぶのではなく、確率を振る</h2>
+    <p>
+      jev は5段階のどれか1つを選ぶのではなく、<strong>5段階すべてに確率を振って</strong>返します。
+      「そういう言い方されると、正直ちょっと疲れるんだけど。」に対する<strong>受容</strong>の答えが、実際にはこうでした。
+    </p>
+    <div class="why" style="border-left-color:var(--jev)">
+      <p style="font-family:var(--mono);font-size:0.8rem;line-height:1.95;margin:0">
+        強く下がった&nbsp;&nbsp;0.01<br>
+        下がった&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.53&nbsp;&nbsp;███████████<br>
+        変化なし&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.16&nbsp;&nbsp;███<br>
+        上がった&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.29&nbsp;&nbsp;██████<br>
+        強く上がった&nbsp;&nbsp;0.01
+      </p>
+    </div>
+    <p style="margin-top:16px">
+      この分布を確率で重み付けした平均が、返ってくる <strong>score = 1.74</strong> です。
+      「変化なし」にあたる 2.0 をわずかに下回る位置。そこから決まった式で −1.0〜1.0 に写して、
+      <strong>変動値 −0.13</strong> になります。
+    </p>
+    <p>
+      段階を1つ選ばせるのではなく分布で返るので、<strong>迷いの度合いがそのまま値に出ます。</strong>
+      この例では「下がった」0.53 と「上がった」0.29 に割れていて、その綱引きの結果が
+      「ほぼ動かない」という小さな値に落ち着いています。1つ選ばせていれば −0.5 になっていたところです。
+    </p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">人格</span>
+    <h2>感情は、増幅する対象を必要とする</h2>
+    <p>
+      affectus の検証では、これは「人格 system prompt が指示する方向への<strong>応答感度を上げるアンプ</strong>」
+      として作用すると結論されています。アンプには増幅する対象が要ります。
+      人格が空のままでは、感情は色をつける先を持ちません。
+    </p>
+    <p>
+      そこで話し手に性格を与えます。2種類あり、画面から切り替えられます。
+    </p>
+    <div class="split">
+      <div class="side llm">
+        <span class="who">friendly</span>
+        <p>明るく協力的。相手の話を肯定的に受け止め、情報よりも気持ちに寄り添う。</p>
+      </div>
+      <div class="side jev">
+        <span class="who">contrarian</span>
+        <p>天邪鬼。素直に同意せず、皮肉や反論を交える。ぶっきらぼうで距離がある。</p>
+      </div>
+    </div>
+    <p style="margin-top:16px">
+      <strong>両側とも同じ人格を使います。</strong>変えるのは判定器だけ。
+      人格という定数を固定したうえで判定器だけを動かすので、見えているのは
+      「<strong>同じ人格でも、判定器が違えば別人のように振る舞う</strong>」という差になります。
+    </p>
+    <p>
+      判定側には人格を与えません。判定は「この発言で感情がどう動くか」であって、人格の演技ではないからです。
+    </p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">画面</span>
+    <h2>どの軸で割れたかを見る</h2>
+    <p>
+      中央に8軸ぶんの対比が並びます。<strong>中央が 0、左右の末端が 1.0。</strong>
+      左が LLM、右が jev で、棒の長さがその軸をどれだけ動かしたかです。
+    </p>
+    <p>
+      <strong>符号は色が持ちます。</strong>正はその側の色、負はくすんだ灰。
+      長さが同じで色が違えば、両者は<strong>正反対の判断をしています</strong>。
+      長さだけで見ると「片方が大きく動いた」としか読めない場面です。
+    </p>
+    <p>
+      中央の数値はその軸の差で、符号付きの値どうしの差。
+      LLM が −0.5、jev が +0.5 なら 1.00 になります。
+    </p>
+    <p>
+      左右のパネルには、感情の輪（affectus の蓄積状態）、判定と生成それぞれの所要時間、
+      生成された返答、そして<strong>モデルに渡した内容と返ってきた内容の JSON</strong> がそのまま出ます。
+    </p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">なぜ jev を試すのか</span>
+    <h2>感情の更新は、会話の外側の処理</h2>
+    <div class="why">
+      <p>
+        これまでの課題は<strong>時間</strong>でした。文章を読ませて現在の状態から感情パラメータの
+        変動値を出させる、という処理を LLM にやらせると、どうしても時間がかかります。
+      </p>
+      <p>
+        しかもこれは、ユーザーに見せる応答そのものではありません。応答を書く<strong>前段の内部処理</strong>です。
+        そこに数秒かかるのは重く、組み込む場所を選びます。
+      </p>
+      <p>
+        jev は同じ判定を一瞬で返します。<strong>レイテンシを気にしなくてよくなる</strong>ため、
+        会話のたびに走らせても構わない処理になります。それが、この比較を作った理由です。
+      </p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

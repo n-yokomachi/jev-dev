@@ -62,7 +62,7 @@ npm init -y
 npm pkg set type=module
 npm install ai zod
 mkdir -p src test public scripts state bin
-go build -o bin/affectus /Users/Naoki/work/workshop/affectus/cmd/affectus
+(cd /Users/Naoki/work/workshop/affectus && go build -o /Users/Naoki/work/workshop/jev-dev/bin/affectus ./cmd/affectus)
 ./bin/affectus --config state/config.yaml --state state/jev.json init --model plutchik
 ./bin/affectus --config state/config.yaml --state state/llm.json init --model plutchik --force
 ```
@@ -780,12 +780,23 @@ export interface ModelPrice {
 /**
  * 1M トークンあたりの米ドル単価。
  * jev: https://docs.typesafe.ai/models （入力のみ課金、出力は無料）
- * claude-sonnet-5: https://vercel.com/ai-gateway/models/claude-sonnet-5
+ * Anthropic 各モデル: https://vercel.com/ai-gateway/models?provider=anthropic
  */
 export const PRICING: Record<string, ModelPrice> = {
   'typesafe-ai/jev': { inputPerMTok: 0.042, outputPerMTok: 0 },
+  'anthropic/claude-haiku-4.5': { inputPerMTok: 1, outputPerMTok: 5 },
   'anthropic/claude-sonnet-5': { inputPerMTok: 2, outputPerMTok: 10 },
+  'anthropic/claude-opus-5': { inputPerMTok: 5, outputPerMTok: 25 },
+  'anthropic/claude-fable-5.1': { inputPerMTok: 10, outputPerMTok: 50 },
 };
+
+/** UI のモデル選択に出す順。既定は先頭ではなく DEFAULT_LLM_MODEL。 */
+export const LLM_MODELS = [
+  'anthropic/claude-haiku-4.5',
+  'anthropic/claude-sonnet-5',
+  'anthropic/claude-opus-5',
+  'anthropic/claude-fable-5.1',
+] as const;
 ```
 
 - [ ] **Step 2: 実応答の形を確認するプローブを書いて実行**
@@ -1251,6 +1262,8 @@ function zeroAxes(): AxisMap {
 function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
     transcriptDir: '/tmp/does-not-matter',
+    llmModels: ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'],
+    defaultLlmModel: 'anthropic/claude-sonnet-5',
     listScenarios: async () => [{ id: 'scenario-a', turnCount: 20 }],
     loadScenario: async (_dir, id) => ({ id, turns: [] }),
     judgeJev: async () => ({
@@ -1348,6 +1361,15 @@ test('POST /api/reset は両側をリセットする', async () => {
   shutdown(server);
 });
 
+test('GET /api/models は選択肢と既定モデルを返す', async () => {
+  const server = createServer(deps());
+  const base = await listen(server);
+  const body = await (await fetch(`${base}/api/models`)).json();
+  assert.ok(body.models.includes(body.default), 'default が models に含まれること');
+  assert.equal(body.default, 'anthropic/claude-sonnet-5');
+  shutdown(server);
+});
+
 test('未知のパスは 404 を返す', async () => {
   const server = createServer(deps());
   const base = await listen(server);
@@ -1369,7 +1391,7 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { experimental_evaluate as evaluate, generateObject } from 'ai';
-import { DEFAULT_LLM_MODEL, PROJECT_ROOT, TRANSCRIPT_DIR, type AxisMap } from './constants.ts';
+import { DEFAULT_LLM_MODEL, LLM_MODELS, PROJECT_ROOT, TRANSCRIPT_DIR, type AxisMap } from './constants.ts';
 import { listScenarios, loadScenario, type Scenario, type ScenarioSummary } from './transcripts.ts';
 import {
   judgeWithJev, judgeWithLlm,
@@ -1381,6 +1403,8 @@ export type Side = 'jev' | 'llm';
 
 export interface ServerDeps {
   transcriptDir: string;
+  llmModels: readonly string[];
+  defaultLlmModel: string;
   listScenarios: (dir: string) => Promise<ScenarioSummary[]>;
   loadScenario: (dir: string, id: string) => Promise<Scenario>;
   judgeJev: (turn: TurnInput) => Promise<JudgeOutcome>;
@@ -1466,6 +1490,10 @@ export function createServer(deps: ServerDeps) {
           await handleJudge(deps, 'llm', req, res);
           return;
         }
+        if (req.method === 'GET' && path === '/api/models') {
+          sendJson(res, 200, { models: deps.llmModels, default: deps.defaultLlmModel });
+          return;
+        }
         if (req.method === 'GET' && path === '/api/state') {
           sendJson(res, 200, { jev: await deps.readAffectus('jev'), llm: await deps.readAffectus('llm') });
           return;
@@ -1499,6 +1527,8 @@ function envFor(side: Side): AffectusEnv {
 export function productionDeps(): ServerDeps {
   return {
     transcriptDir: TRANSCRIPT_DIR,
+    llmModels: LLM_MODELS,
+    defaultLlmModel: DEFAULT_LLM_MODEL,
     listScenarios,
     loadScenario,
     judgeJev: (turn) => judgeWithJev(turn, evaluate as unknown as EvaluateFn),
@@ -1521,12 +1551,12 @@ if (process.argv[1]?.endsWith('server.ts')) {
 - [ ] **Step 4: テストを実行して通過を確認**
 
 Run: `node --test test/server.test.ts`
-Expected: PASS（6件）
+Expected: PASS（7件）
 
 - [ ] **Step 5: 全テストをまとめて実行**
 
 Run: `node --test test/`
-Expected: PASS（37件）
+Expected: PASS（38件）
 
 - [ ] **Step 6: commit**
 
@@ -1572,6 +1602,7 @@ git commit -m "feat: HTTP サーバーとルーティングを追加"
 <main class="cols">
   <section class="panel llm" id="panel-llm">
     <div class="badge"><span class="n">LLM</span><span class="v" id="llm-model">—</span></div>
+    <select id="llm-pick" class="pick"></select>
     <div class="wheel" id="wheel-llm"></div>
     <div class="ms" id="llm-ms">—<span>ms</span></div>
     <div class="track"><i id="llm-track"></i></div>
@@ -1687,6 +1718,19 @@ body {
 .badge .v { color: var(--dim); font-size: 9px; text-transform: none; }
 .llm .badge .n { color: var(--llm); }
 .jev .badge .n { color: var(--jev); }
+
+.pick {
+  width: 100%;
+  background: #0a0f15;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
 
 .wheel { display: flex; justify-content: center; margin-bottom: 10px; }
 
@@ -1952,10 +1996,11 @@ function l1(a, b) {
 }
 
 async function judge(side, turn) {
+  const body = side === 'llm' ? { ...turn, model: el('llm-pick').value } : turn;
   const res = await fetch(`/api/judge/${side}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(turn),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${side}: ${res.status}`);
   return res.json();
@@ -2048,6 +2093,12 @@ const initial = Object.fromEntries(AXES.map((a) => [a, 0]));
 drawWheel(el('wheel-llm'), initial);
 drawWheel(el('wheel-jev'), initial);
 
+const { models, default: defaultModel } = await (await fetch('/api/models')).json();
+el('llm-pick').innerHTML = models
+  .map((m) => `<option value="${m}">${m.replace('anthropic/', '')}</option>`)
+  .join('');
+el('llm-pick').value = defaultModel;
+
 const scenarios = await (await fetch('/api/scenarios')).json();
 el('scenario').innerHTML = scenarios
   .map((s) => `<option value="${s.id}">${s.id}</option>`)
@@ -2070,6 +2121,7 @@ node --env-file=.env.local src/server.ts
 - jev 側の軸ゲージにだけ点線マーカーが出ている
 - 中央の L1 距離に数値が入る
 - 中央の「当時の自己申告」に transcripts の記録値が出ている
+- LLM パネル上部のモデル選択に4つのモデルが並び、既定が `claude-sonnet-5` になっている
 
 - [ ] **Step 3: 自動再生とリセットを確認**
 
@@ -2082,7 +2134,7 @@ node --env-file=.env.local src/server.ts
 - [ ] **Step 5: 全テストを実行**
 
 Run: `node --test test/`
-Expected: PASS（37件）
+Expected: PASS（38件）
 
 - [ ] **Step 6: commit**
 

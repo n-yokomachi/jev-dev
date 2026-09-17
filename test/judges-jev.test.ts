@@ -79,3 +79,20 @@ test('jev の provider は typesafe-ai', async () => {
   const out = await judgeWithJev(turn, async () => fakeResult());
   assert.equal(out.provider, 'typesafe-ai');
 });
+
+test('軸の回答が欠けていたら投げる', async () => {
+  const broken = fakeResult();
+  delete broken.answers.sorrow;
+  await assert.rejects(
+    () => judgeWithJev(turn, async () => broken),
+    /sorrow/,
+  );
+});
+
+test('probabilities が無ければ confidence は undefined', async () => {
+  const out = await judgeWithJev(turn, async () =>
+    fakeResult({ sorrow: { type: 'score', score: 3 } }),
+  );
+  assert.equal(out.confidence.sorrow, undefined);
+  assert.equal(out.deltas.sorrow, 0.5);
+});

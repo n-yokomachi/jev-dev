@@ -83,12 +83,13 @@ export async function judgeWithJev(
   turn: TurnInput,
   evaluateFn: EvaluateFn,
 ): Promise<JudgeOutcome> {
+  // 問いと state の構築は計測区間の外で行う。設計書が latencyMs を
+  // 「モデル呼び出しの区間のみ」と定めており、LLM 側も同じ形にしてあるため。
+  const questions = buildJevQuestions();
+  const state = { user: turn.user, agent: turn.agent };
+
   const started = performance.now();
-  const result = await evaluateFn({
-    model: JEV_MODEL,
-    state: { user: turn.user, agent: turn.agent },
-    questions: buildJevQuestions(),
-  });
+  const result = await evaluateFn({ model: JEV_MODEL, state, questions });
   const latencyMs = Math.round(performance.now() - started);
 
   const deltas = {} as AxisMap;
@@ -97,12 +98,23 @@ export async function judgeWithJev(
 
   for (const axis of AXES) {
     const answer = result.answers[axis];
-    const score = answer?.score ?? 2;
-    rawScore[axis] = score;
-    deltas[axis] = Number(scoreToDelta(score).toFixed(4));
+    // SDK の契約は「質問ごとにちょうど1つの回答」「部分結果なし」を保証する。
+    // 破られた場合に既定値で埋めると「変化なし」と区別が付かず、比較データが静かに壊れる。
+    if (!answer || typeof answer.score !== 'number') {
+      throw new Error(`jev の応答に軸 ${axis} の score がありません`);
+    }
+    rawScore[axis] = answer.score;
+    deltas[axis] = Number(scoreToDelta(answer.score).toFixed(4));
+
+    // インストール済みの ai / @ai-sdk/provider の評価回答型に confidence は存在しない
+    // （型定義を検査して確認済み）。実運用では常に下の算出側が使われる。
+    // 将来 SDK が持つようになった場合に備えて ?? は残す。
+    // probabilities はオプショナル。欠けている場合は「不明」として undefined を入れる。
+    // 0 を入れると「確信度が最低」という別の意味になってしまう。
+    const probs = answer.probabilities;
     confidence[axis] =
-      answer?.confidence ??
-      confidenceFromProbabilities(Object.values(answer?.probabilities ?? {}));
+      answer.confidence ??
+      (probs ? confidenceFromProbabilities(Object.values(probs)) : undefined);
   }
 
   const usage = normalizeUsage(result.usage);

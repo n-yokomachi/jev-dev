@@ -303,9 +303,26 @@ test('ターンの開始で前ターンの生の入出力を消す', async () =>
   assert.match(clearSide[0], /raw-res/);
 });
 
-test('自動再生ボタンは自動で送信することが分かる表記になっている', async () => {
+test('自動遷移・自動送信の経路は存在しない', async () => {
   const html = await read('index.html');
-  assert.match(html, /id="play"[^>]*>[^<]*自動送信/);
+  const source = await read('app.js');
+  // 再生ボタンが残っていれば、ターンを勝手に送りながら課金する経路も残っている。
+  assert.doesNotMatch(html, /id="play"/);
+  assert.doesNotMatch(source, /playTurn|state\.playing|playRun/);
+  // 送信は submit ハンドラだけ。ここ以外から runTurn を呼ぶと自動送信に戻る。
+  const calls = [...source.matchAll(/runTurn\(/g)];
+  assert.equal(calls.length, 2, 'runTurn の定義と呼び出しは1つずつのはず');
+});
+
+test('ターン送りは1つずつで、送信しないことがボタンの表記で分かる', async () => {
+  const html = await read('index.html');
+  assert.match(html, /id="prev"[^>]*>[^<]*前へ/);
+  assert.match(html, /id="next"[^>]*>[^<]*次へ/);
+});
+
+test('シナリオの選択欄にはラベルがある', async () => {
+  const html = await read('index.html');
+  assert.match(html, /<label class="tag" for="scenario">シナリオ<\/label>/);
 });
 
 test('人格の選択肢は src/constants.ts の PERSONAS と一致する', async () => {

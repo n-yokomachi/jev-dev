@@ -48,7 +48,6 @@ export function drawWheel(container, values) {
 const state = {
   scenario: null,
   index: 0,
-  playing: false,
   // 判定が飛行中かどうか。飛行中に別のターンを始めさせない。
   // 捨てた判定のデルタもサーバー側では affectus に適用済みで、
   // 見ていないターンのぶんが輪に積み上がり、課金も重複するため。
@@ -392,8 +391,6 @@ function updateProgress() {
   // 人格も飛行中は凍らせる。走っているのは送信した時点の人格であり、
   // 途中で変えられると画面の選択と実際に生成に渡った人格が食い違う。
   el('persona').disabled = state.busy;
-  // 走行中の再生を止める操作だけは飛行中でも受け付けるので、そのときは殺さない。
-  el('play').disabled = state.busy && !state.playing;
 }
 
 /** 飛行中かどうかを更新し、ボタンの活殺に反映する。黙ってクリックを無視しないため。 */
@@ -411,16 +408,6 @@ function loadTurn(index) {
   state.index = Math.min(Math.max(0, index), state.scenario.turns.length - 1);
   el('turn-user').value = state.scenario.turns[state.index].user;
   updateProgress();
-}
-
-/**
- * 自動再生専用。ターンを読み込んだうえでそのつど送信する。
- * ナビゲーションが実行しなくなった後、唯一の自動課金経路はここだけになる。
- */
-async function playTurn(index) {
-  loadTurn(index);
-  if (!state.scenario) return;
-  await runTurn({ user: state.scenario.turns[state.index].user });
 }
 
 /**
@@ -453,52 +440,6 @@ async function loadScenario(id) {
   loadTurn(0);
 }
 
-/**
- * 再生の世代。await 中のループが復帰したとき、自分がまだ現役かを判断するのに使う。
- * これが無いと、シナリオ切替で止めた直後に再生を押し直したとき、
- * 中断中だった古いループが state.playing の true を見て生き返り、二重に進む。
- */
-let playRun = 0;
-
-async function play() {
-  if (state.playing) {
-    // 走行中なら止めるだけ。世代を進めて、await 中のループを失効させる。
-    state.playing = false;
-    playRun += 1;
-    el('play').textContent = '▶';
-    // 飛行中に止めたなら、ここで再生ボタンを殺す。生かしたままだと
-    // 押しても state.busy で黙って無視される。
-    updateProgress();
-    return;
-  }
-
-  // 止めるほうは飛行中でも受け付ける。始めるほうだけを止める。
-  if (state.busy) return;
-
-  const run = ++playRun;
-  state.playing = true;
-  el('play').textContent = '❙❙';
-
-  while (
-    run === playRun &&
-    state.playing &&
-    state.scenario &&
-    state.index < state.scenario.turns.length
-  ) {
-    await playTurn(state.index);
-    if (run !== playRun || !state.playing) break;
-    if (state.index >= state.scenario.turns.length - 1) break;
-    state.index += 1;
-  }
-
-  // 自分が現役のときだけ後片付けする。失効した古いループが
-  // 現役のループの状態やボタン表示を壊さないようにするため。
-  if (run === playRun) {
-    state.playing = false;
-    el('play').textContent = '▶';
-  }
-}
-
 el('prev').addEventListener('click', () => {
   if (state.busy) return;
   loadTurn(state.index - 1);
@@ -507,14 +448,9 @@ el('next').addEventListener('click', () => {
   if (state.busy) return;
   loadTurn(state.index + 1);
 });
-el('play').addEventListener('click', play);
 
 el('reset').addEventListener('click', async () => {
   if (state.busy) return;
-  // 再生中なら止める。止めないと、消した直後の輪を再生ループが描き直す。
-  state.playing = false;
-  playRun += 1;
-  el('play').textContent = '▶';
   // 飛行中のターンは上の guard で弾いているが、世代は念のため進めておく。
   // 取りこぼしがあると、そのターンが reset 後に解決してパネルを埋め直す。
   generation += 1;
@@ -555,11 +491,6 @@ el('scenario').addEventListener('change', async (event) => {
     event.target.value = state.scenario?.id ?? '';
     return;
   }
-  // 再生中にシナリオを変えられたら止める。止めないと古い index のまま
-  // 新シナリオを勝手に進み続け、再生ボタンの表示とも食い違う。
-  state.playing = false;
-  playRun += 1; // await 中の再生ループを失効させる
-  el('play').textContent = '▶';
   try {
     await loadScenario(event.target.value);
   } catch (error) {

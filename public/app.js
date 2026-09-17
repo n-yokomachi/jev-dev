@@ -237,7 +237,7 @@ async function requestReply(user, axes) {
 }
 
 /**
- * 表示中のターンの世代。next 連打などで runTurn が重なったとき、
+ * 表示中のターンの世代。自動再生や送信の連続実行で runTurn が重なったとき、
  * 古い方の結果が新しいターンの会話文の隣に描かれるのを防ぐ。
  */
 let generation = 0;
@@ -255,7 +255,7 @@ async function runTurn(turn) {
 async function runTurnInner(turn) {
   const gen = ++generation;
   clearNotice();
-  el('turn-user').textContent = turn.user;
+  // 発言は入力欄の中身がそのまま入力になる。ここでは書き戻さない。
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
     el(`panel-${side}`).classList.add('pending');
@@ -306,7 +306,10 @@ function updateProgress() {
   el('progress').textContent = `turn ${total ? state.index + 1 : '—'} / ${total || '—'}`;
   el('prev').disabled = state.busy || state.index <= 0;
   el('next').disabled = state.busy || !state.scenario || state.index >= total - 1;
-  el('manual-submit').disabled = state.busy;
+  el('send').disabled = state.busy;
+  // 飛行中は入力欄も凍らせる。書き換えても、走っているのは押した時点の中身であり、
+  // 画面の文と実際に判定された文が食い違う。
+  el('turn-user').disabled = state.busy;
   // reset とシナリオ切替も飛行中は殺す。世代を進めて結果を捨てても、
   // サーバー側では affectus に適用済みで、見ていないターンのぶんが輪に積み上がるため。
   el('reset').disabled = state.busy;
@@ -321,31 +324,44 @@ function setBusy(value) {
   updateProgress();
 }
 
-async function showTurn(index) {
+/**
+ * ターン移動。そのターンの user 発言をテキスト欄に読み込むだけで、API は叩かない。
+ * 実行の起点は送信ボタンだけなので、ここでは affectus にも課金にも触れない。
+ */
+function loadTurn(index) {
   if (!state.scenario) return;
   state.index = Math.min(Math.max(0, index), state.scenario.turns.length - 1);
+  el('turn-user').value = state.scenario.turns[state.index].user;
   updateProgress();
-  await runTurn(state.scenario.turns[state.index]);
+}
+
+/**
+ * 自動再生専用。ターンを読み込んだうえでそのつど送信する。
+ * ナビゲーションが実行しなくなった後、唯一の自動課金経路はここだけになる。
+ */
+async function playTurn(index) {
+  loadTurn(index);
+  if (!state.scenario) return;
+  await runTurn({ user: state.scenario.turns[state.index].user });
 }
 
 async function loadScenario(id) {
   const res = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
   // ok を見ないと、エラー応答の JSON がそのままシナリオとして state に入り、
-  // showTurn が turns を読んだところで初めて落ちる。
+  // loadTurn が turns を読んだところで初めて落ちる。
   if (!res.ok) throw new Error(`シナリオ ${id} を読み込めません（HTTP ${res.status}）`);
   state.scenario = await res.json();
   state.index = 0;
   // 切替前のターンが飛行中なら、その結果は捨てる。
-  // 会話文も消す。残すと前シナリオの発言が新シナリオの表示として残る。
   generation += 1;
-  el('turn-user').textContent = '—';
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
     // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
     el(`panel-${side}`).classList.remove('pending');
     clearSide(side);
   }
-  updateProgress();
+  // 先頭ターンの発言をテキスト欄に読み込む。残した前シナリオの発言は上書きされる。送信はしない。
+  loadTurn(0);
 }
 
 /**
@@ -380,7 +396,7 @@ async function play() {
     state.scenario &&
     state.index < state.scenario.turns.length
   ) {
-    await showTurn(state.index);
+    await playTurn(state.index);
     if (run !== playRun || !state.playing) break;
     if (state.index >= state.scenario.turns.length - 1) break;
     state.index += 1;
@@ -396,11 +412,11 @@ async function play() {
 
 el('prev').addEventListener('click', () => {
   if (state.busy) return;
-  showTurn(state.index - 1);
+  loadTurn(state.index - 1);
 });
 el('next').addEventListener('click', () => {
   if (state.busy) return;
-  showTurn(state.index + 1);
+  loadTurn(state.index + 1);
 });
 el('play').addEventListener('click', play);
 
@@ -461,10 +477,10 @@ el('scenario').addEventListener('change', async (event) => {
   }
 });
 
-el('manual').addEventListener('submit', async (event) => {
+el('compose').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (state.busy) return;
-  const user = el('manual-user').value.trim();
+  const user = el('turn-user').value.trim();
   // 空のまま送ると、中身の無い発言で課金される判定を2本叩くことになる。
   if (user === '') {
     showError('user の発言を入力してください');

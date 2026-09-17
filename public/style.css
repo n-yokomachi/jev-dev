@@ -118,6 +118,7 @@ body {
   color: var(--dim);
   font-size: 9px;
   letter-spacing: .12em;
+  margin-bottom: 3px;
 }
 
 .gen-lb { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
@@ -218,22 +219,6 @@ body {
   border-right: 2px dotted #93a1b0;
 }
 
-.turn {
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  margin-bottom: 8px;
-}
-
-.turn .who {
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-
-.turn p { margin: 4px 0 0; line-height: 1.6; }
-
 .ghost {
   color: var(--dim);
   font-size: 9px;
@@ -242,29 +227,46 @@ body {
   margin-top: 8px;
 }
 
-.diverge { text-align: center; margin: 10px 0; color: var(--dim); font-size: 10px; }
+/* 余った縦幅の中央に置く。上の入力欄と下端の間で行き場が無いため。 */
+.diverge { text-align: center; margin: auto 0; color: var(--dim); font-size: 10px; }
 .diverge b { display: block; color: var(--text); font-size: 20px; margin-top: 2px; }
 
-.manual { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+/*
+ * 表示欄と手入力欄を1つにした送信欄。ターン送りはここに文章を入れるだけで、
+ * 実行するのは送信ボタンだけ。中身がどこから来たかは実行に関係しない。
+ */
+.compose { display: flex; flex-direction: column; gap: 6px; }
 
-.manual textarea {
+.compose .who {
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.compose textarea {
   background: #0a0f15;
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 6px;
+  padding: 8px;
   font: inherit;
+  line-height: 1.7;
+  min-height: 8em;
   resize: vertical;
 }
 
-.manual button {
+.compose textarea:disabled { opacity: .5; }
+
+.compose button {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 6px;
+  padding: 8px;
   font: inherit;
   cursor: pointer;
 }
 
-.manual button:disabled { opacity: .4; cursor: default; }
+.compose button:hover:enabled { border-color: var(--dim); }
+.compose button:disabled { opacity: .4; cursor: default; }

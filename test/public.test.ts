@@ -65,3 +65,48 @@ test('返答の枠は溢れずに収まる', async () => {
   assert.match(css, /\.reply \{[^}]*white-space: pre-wrap/s);
   assert.match(css, /@media \(max-width: 900px\)/);
 });
+
+test('ターン移動 (prev/next) は判定を実行しない', async () => {
+  const source = await read('app.js');
+  // 実行系だった旧関数名が残っていれば、ボタンがまだそれを呼んでいる可能性がある。
+  assert.doesNotMatch(source, /showTurn/);
+  assert.match(source, /loadTurn\(state\.index - 1\)/);
+  assert.match(source, /loadTurn\(state\.index \+ 1\)/);
+
+  const match = source.match(/function loadTurn\(index\) \{[\s\S]*?\n\}\n/);
+  assert.ok(match, 'loadTurn の定義が見つからない');
+  // 読み込むだけなので、この関数の中に fetch や実行系の呼び出しがあってはならない。
+  assert.doesNotMatch(match[0], /fetch\(|runTurn\(/);
+});
+
+test('送信は中央のテキスト欄の中身を実行する唯一の経路', async () => {
+  const source = await read('app.js');
+  assert.match(source, /el\('compose'\)\.addEventListener\('submit'/);
+  assert.match(source, /el\('turn-user'\)\.value\.trim\(\)/);
+});
+
+test('中央の入力欄は1つに統合されている（表示用と手入力用が分かれていない）', async () => {
+  const html = await read('index.html');
+  assert.doesNotMatch(html, /id="manual"/);
+  assert.doesNotMatch(html, /id="manual-user"/);
+  assert.doesNotMatch(html, /id="manual-submit"/);
+  assert.match(html, /id="turn-user"/);
+  assert.match(html, /id="compose"/);
+  assert.equal((html.match(/<textarea/g) ?? []).length, 1, 'textarea が1つではない');
+});
+
+test('送信ボタンの文言は「メッセージを送信」', async () => {
+  const html = await read('index.html');
+  assert.match(html, /id="send"[^>]*>メッセージを送信</);
+});
+
+test('軸ゲージの見出しは「◯◯ が返した感情の変動値」の形式', async () => {
+  const html = await read('index.html');
+  assert.match(html, /LLM が返した感情の変動値/);
+  assert.match(html, /jev が返した感情の変動値/);
+});
+
+test('自動再生ボタンは自動で送信することが分かる表記になっている', async () => {
+  const html = await read('index.html');
+  assert.match(html, /id="play"[^>]*>[^<]*自動送信/);
+});

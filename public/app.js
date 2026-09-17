@@ -46,8 +46,6 @@ export function drawWheel(container, values) {
 }
 
 const state = {
-  scenario: null,
-  index: 0,
   // 判定が飛行中かどうか。飛行中に別のターンを始めさせない。
   // 捨てた判定のデルタもサーバー側では affectus に適用済みで、
   // 見ていないターンのぶんが輪に積み上がり、課金も重複するため。
@@ -375,79 +373,25 @@ async function runTurnInner(turn) {
   await Promise.allSettled(both);
 }
 
-function updateProgress() {
-  const total = state.scenario?.turns.length ?? 0;
-  el('progress').textContent = `turn ${total ? state.index + 1 : '—'} / ${total || '—'}`;
-  el('prev').disabled = state.busy || state.index <= 0;
-  el('next').disabled = state.busy || !state.scenario || state.index >= total - 1;
+/** 飛行中に触れる操作を殺す。黙ってクリックを無視しないため。 */
+function syncControls() {
   el('send').disabled = state.busy;
   // 飛行中は入力欄も凍らせる。書き換えても、走っているのは押した時点の中身であり、
   // 画面の文と実際に判定された文が食い違う。
   el('turn-user').disabled = state.busy;
-  // reset とシナリオ切替も飛行中は殺す。世代を進めて結果を捨てても、
-  // サーバー側では affectus に適用済みで、見ていないターンのぶんが輪に積み上がるため。
+  // reset も飛行中は殺す。世代を進めて結果を捨てても、サーバー側では
+  // affectus に適用済みで、見ていないターンのぶんが輪に積み上がるため。
   el('reset').disabled = state.busy;
-  el('scenario').disabled = state.busy;
   // 人格も飛行中は凍らせる。走っているのは送信した時点の人格であり、
   // 途中で変えられると画面の選択と実際に生成に渡った人格が食い違う。
   el('persona').disabled = state.busy;
 }
 
-/** 飛行中かどうかを更新し、ボタンの活殺に反映する。黙ってクリックを無視しないため。 */
+/** 飛行中かどうかを更新し、ボタンの活殺に反映する。 */
 function setBusy(value) {
   state.busy = value;
-  updateProgress();
+  syncControls();
 }
-
-/**
- * ターン移動。そのターンの user 発言をテキスト欄に読み込むだけで、API は叩かない。
- * 実行の起点は送信ボタンだけなので、ここでは affectus にも課金にも触れない。
- */
-function loadTurn(index) {
-  if (!state.scenario) return;
-  state.index = Math.min(Math.max(0, index), state.scenario.turns.length - 1);
-  el('turn-user').value = state.scenario.turns[state.index].user;
-  updateProgress();
-}
-
-/**
- * シナリオ名から人格を決める。トランスクリプトは friendly / contrarian の
- * どちらかの人格で記録されており、ファイル名にその名前が入っている。
- * 記録時と違う人格で再生すると、発言と返答が噛み合わない。
- */
-export function personaForScenario(id) {
-  return String(id).includes('contrarian') ? 'contrarian' : 'friendly';
-}
-
-async function loadScenario(id) {
-  const res = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
-  // ok を見ないと、エラー応答の JSON がそのままシナリオとして state に入り、
-  // loadTurn が turns を読んだところで初めて落ちる。
-  if (!res.ok) throw new Error(`シナリオ ${id} を読み込めません（HTTP ${res.status}）`);
-  state.scenario = await res.json();
-  state.index = 0;
-  // 記録された人格に合わせる。送信前なら手で変えられる。
-  el('persona').value = personaForScenario(id);
-  // 切替前のターンが飛行中なら、その結果は捨てる。
-  generation += 1;
-  clearDuel();
-  for (const side of ['llm', 'jev']) {
-    // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
-    el(`panel-${side}`).classList.remove('pending');
-    clearSide(side);
-  }
-  // 先頭ターンの発言をテキスト欄に読み込む。残した前シナリオの発言は上書きされる。送信はしない。
-  loadTurn(0);
-}
-
-el('prev').addEventListener('click', () => {
-  if (state.busy) return;
-  loadTurn(state.index - 1);
-});
-el('next').addEventListener('click', () => {
-  if (state.busy) return;
-  loadTurn(state.index + 1);
-});
 
 el('reset').addEventListener('click', async () => {
   if (state.busy) return;
@@ -484,20 +428,6 @@ el('reset').addEventListener('click', async () => {
   }
 });
 
-el('scenario').addEventListener('change', async (event) => {
-  // 飛行中の切替は、サーバーが affectus に適用済みのデルタを見ないまま捨てることになる。
-  if (state.busy) {
-    // 選択だけ先に動いているので、読み込み済みのシナリオに戻す。
-    event.target.value = state.scenario?.id ?? '';
-    return;
-  }
-  try {
-    await loadScenario(event.target.value);
-  } catch (error) {
-    showError(error.message);
-  }
-});
-
 el('compose').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (state.busy) return;
@@ -515,10 +445,10 @@ const initial = Object.fromEntries(AXES.map((a) => [a, 0]));
 drawWheel(el('wheel-llm'), initial);
 drawWheel(el('wheel-jev'), initial);
 clearDuel();
-updateProgress();
+syncControls();
 
 // 初期化の失敗は画面に出す。出さないと真っ白なまま理由が分からない。
-// 状態の取得とシナリオ一覧の取得は独立なので、片方が落ちても他方は進める。
+// 状態の取得とモデル一覧の取得は独立なので、片方が落ちても他方は進める。
 try {
   await drawStateWheels();
 } catch (error) {
@@ -533,14 +463,6 @@ try {
     .map((m) => `<option value="${m}">${m.replace('anthropic/', '')}</option>`)
     .join('');
   el('llm-pick').value = defaultModel;
-
-  const scenariosRes = await fetch('/api/scenarios');
-  if (!scenariosRes.ok) throw new Error(`/api/scenarios が HTTP ${scenariosRes.status}`);
-  const scenarios = await scenariosRes.json();
-  el('scenario').innerHTML = scenarios
-    .map((s) => `<option value="${s.id}">${s.id}</option>`)
-    .join('');
-  if (scenarios.length > 0) await loadScenario(scenarios[0].id);
 } catch (error) {
   showError(`初期化に失敗しました: ${error.message}`);
 }

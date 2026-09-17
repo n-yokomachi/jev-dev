@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type ServerDeps } from '../src/server.ts';
-import { loadScenario } from '../src/transcripts.ts';
 import { AXES, type AxisMap } from '../src/constants.ts';
 
 function zeroAxes(): AxisMap {
@@ -12,11 +11,8 @@ function zeroAxes(): AxisMap {
 
 function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
-    transcriptDir: '/tmp/does-not-matter',
     llmModels: ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'],
     defaultLlmModel: 'anthropic/claude-haiku-4.5',
-    listScenarios: async () => [{ id: 'scenario-a', turnCount: 20 }],
-    loadScenario: async (_dir, id) => ({ id, turns: [] }),
     judgeJev: async (turn) => ({
       model: 'typesafe-ai/jev', provider: 'typesafe-ai', deltas: zeroAxes(), confidence: { joy: 0.9 },
       rawScore: { joy: 2 }, latencyMs: 238,
@@ -58,15 +54,6 @@ function shutdown(server: ReturnType<typeof createServer>): void {
   server.closeAllConnections();
   server.close();
 }
-
-test('GET /api/scenarios が一覧を返す', async () => {
-  const server = createServer(deps());
-  const base = await listen(server);
-  const res = await fetch(`${base}/api/scenarios`);
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), [{ id: 'scenario-a', turnCount: 20 }]);
-  shutdown(server);
-});
 
 test('POST /api/judge/jev は判定結果に適用後の軸を足して返す', async () => {
   const server = createServer(deps());
@@ -362,44 +349,6 @@ async function quiet<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function enoent(path: string): NodeJS.ErrnoException {
-  const error: NodeJS.ErrnoException = new Error(
-    `ENOENT: no such file or directory, open '${path}'`,
-  );
-  error.code = 'ENOENT';
-  return error;
-}
-
-test('存在しないシナリオは 404 を返し、パスを漏らさない', async () => {
-  const server = createServer(deps({
-    loadScenario: async () => { throw enoent('/Users/someone/jev-dev/data/transcripts/nope.jsonl'); },
-  }));
-  const base = await listen(server);
-  const res = await fetch(`${base}/api/scenarios/nope`);
-  const body = await res.json();
-  assert.equal(res.status, 404);
-  assert.ok(!body.error.includes('/'), `パスが漏れている: ${body.error}`);
-  shutdown(server);
-});
-
-test('壊れたシナリオ ID は 400 を返す', async () => {
-  const server = createServer(deps({
-    loadScenario: async () => { throw new Error('ここには来ないはず'); },
-  }));
-  const base = await listen(server);
-  const res = await fetch(`${base}/api/scenarios/%`);
-  assert.equal(res.status, 400);
-  shutdown(server);
-});
-
-test('パス区切りを含むシナリオ ID は 400 を返す', async () => {
-  const server = createServer(deps({ loadScenario }));
-  const base = await listen(server);
-  const res = await fetch(`${base}/api/scenarios/..%2Fsecret`);
-  assert.equal(res.status, 400);
-  shutdown(server);
-});
-
 test('壊れた JSON ボディは 400 を返す', async () => {
   const server = createServer(deps());
   const base = await listen(server);
@@ -426,12 +375,12 @@ test('JSON の null ボディは 400 を返す', async () => {
 
 test('想定外の失敗は 500 を返し、パスを漏らさない', async () => {
   const server = createServer(deps({
-    listScenarios: async () => {
-      throw new Error("EACCES: permission denied, scandir '/Users/someone/jev-dev/data/transcripts'");
+    readAffectus: async () => {
+      throw new Error("EACCES: permission denied, open '/Users/someone/jev-dev/state/llm.json'");
     },
   }));
   const base = await listen(server);
-  const res = await quiet(() => fetch(`${base}/api/scenarios`));
+  const res = await quiet(() => fetch(`${base}/api/state`));
   const body = await res.json();
   assert.equal(res.status, 500);
   assert.ok(!body.error.includes('/Users'), `パスが漏れている: ${body.error}`);

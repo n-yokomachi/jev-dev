@@ -10,9 +10,6 @@ export type AxisMap = Record<Axis, number>;
 
 export const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-export const TRANSCRIPT_DIR =
-  process.env.TRANSCRIPT_DIR ?? fileURLToPath(new URL('../data/transcripts', import.meta.url));
-
 export const AXIS_JA: Record<Axis, string> = {
   joy: '喜び',
   acceptance: '受容',

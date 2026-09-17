@@ -3,10 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { experimental_evaluate as evaluate, generateObject, generateText } from 'ai';
 import {
-  AXES, DEFAULT_LLM_MODEL, DEFAULT_PERSONA, LLM_MODELS, PROJECT_ROOT, TRANSCRIPT_DIR,
+  AXES, DEFAULT_LLM_MODEL, DEFAULT_PERSONA, LLM_MODELS, PROJECT_ROOT,
   isPersonaId, type AxisMap, type PersonaId,
 } from './constants.ts';
-import { listScenarios, loadScenario, type Scenario, type ScenarioSummary } from './transcripts.ts';
 import {
   judgeWithJev, judgeWithLlm,
   type EvaluateFn, type GenerateObjectFn, type JudgeOutcome, type TurnInput,
@@ -21,11 +20,8 @@ import { HttpError } from './http-error.ts';
 export type Side = 'jev' | 'llm';
 
 export interface ServerDeps {
-  transcriptDir: string;
   llmModels: readonly string[];
   defaultLlmModel: string;
-  listScenarios: (dir: string) => Promise<ScenarioSummary[]>;
-  loadScenario: (dir: string, id: string) => Promise<Scenario>;
   judgeJev: (turn: TurnInput) => Promise<JudgeOutcome>;
   judgeLlm: (turn: TurnInput, model?: string) => Promise<JudgeOutcome>;
   generateReply: (input: ReplyInput) => Promise<ReplyOutcome>;
@@ -44,12 +40,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(payload);
-}
-
-function errnoCode(error: unknown): string | undefined {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
-  const code = (error as { code: unknown }).code;
-  return typeof code === 'string' ? code : undefined;
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -79,26 +69,6 @@ async function serveStatic(res: ServerResponse, pathname: string): Promise<void>
   } catch {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('not found');
-  }
-}
-
-async function loadScenarioOrFail(deps: ServerDeps, encodedId: string): Promise<Scenario> {
-  let id: string;
-  try {
-    id = decodeURIComponent(encodedId);
-  } catch {
-    throw new HttpError(400, 'シナリオ ID が不正です');
-  }
-  try {
-    return await deps.loadScenario(deps.transcriptDir, id);
-  } catch (error) {
-    // status の分担: 不正な id は transcripts.ts が HttpError(400) を投げ、
-    // ファイルが無い場合は ENOENT のまま上がってくる。ファイルが無いのは
-    // 「見つからない」であってサーバーの故障ではないので、404 への変換はここが持つ。
-    // この変換を消すと「見つからない」が 500 になる。
-    // ENOENT の message には絶対パスが載るので、そのままでは返さない。
-    if (errnoCode(error) === 'ENOENT') throw new HttpError(404, 'シナリオが見つかりません');
-    throw error;
   }
 }
 
@@ -196,14 +166,6 @@ export function createServer(deps: ServerDeps) {
         const url = new URL(req.url ?? '/', 'http://localhost');
         const path = url.pathname;
 
-        if (req.method === 'GET' && path === '/api/scenarios') {
-          sendJson(res, 200, await deps.listScenarios(deps.transcriptDir));
-          return;
-        }
-        if (req.method === 'GET' && path.startsWith('/api/scenarios/')) {
-          sendJson(res, 200, await loadScenarioOrFail(deps, path.slice('/api/scenarios/'.length)));
-          return;
-        }
         if (req.method === 'POST' && path === '/api/judge/jev') {
           await handleJudge(deps, 'jev', req, res);
           return;
@@ -259,11 +221,8 @@ function envFor(side: Side): AffectusEnv {
 
 export function productionDeps(): ServerDeps {
   return {
-    transcriptDir: TRANSCRIPT_DIR,
     llmModels: LLM_MODELS,
     defaultLlmModel: DEFAULT_LLM_MODEL,
-    listScenarios,
-    loadScenario,
     judgeJev: (turn) => judgeWithJev(turn, evaluate as unknown as EvaluateFn),
     judgeLlm: (turn, model) =>
       judgeWithLlm(turn, generateObject as unknown as GenerateObjectFn, model ?? DEFAULT_LLM_MODEL),

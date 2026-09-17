@@ -1058,12 +1058,13 @@ export async function judgeWithJev(
   turn: TurnInput,
   evaluateFn: EvaluateFn,
 ): Promise<JudgeOutcome> {
+  // 問いと state の構築は計測区間の外で行う。設計書が latencyMs を
+  // 「モデル呼び出しの区間のみ」と定めており、LLM 側も同じ形にしてあるため。
+  const questions = buildJevQuestions();
+  const state = { user: turn.user, agent: turn.agent };
+
   const started = performance.now();
-  const result = await evaluateFn({
-    model: JEV_MODEL,
-    state: { user: turn.user, agent: turn.agent },
-    questions: buildJevQuestions(),
-  });
+  const result = await evaluateFn({ model: JEV_MODEL, state, questions });
   const latencyMs = Math.round(performance.now() - started);
 
   const deltas = {} as AxisMap;

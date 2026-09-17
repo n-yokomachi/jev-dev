@@ -131,27 +131,48 @@ function l1(a, b) {
  * サーバーの感情状態を読んで両方の輪を描く。
  * 状態はファイルに永続するので、ゼロから描き始めると次の判定が返った瞬間に
  * 蓄積値へ飛び、初期表示が状態を偽ることになる。
+ *
+ * gen は呼び出した時点の世代。既定は呼び出し時の generation。
+ * 読んでいる間に新しいターンが輪を描いていたら、古い値で描き直さない。
  */
-async function drawStateWheels() {
+async function drawStateWheels(gen = generation) {
   const res = await fetch('/api/state');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const current = await res.json();
+  if (gen !== generation) return;
   drawWheel(el('wheel-llm'), current.llm);
   drawWheel(el('wheel-jev'), current.jev);
 }
+
+/**
+ * 判定1本を待つ上限。これを超えたら失敗として扱う。
+ * 上限が無いと、応答が返らないまま state.busy が立ち続け、
+ * prev / next / 手入力がリロードするまで戻らなくなる。
+ * 比較する両モデルは数百ミリ秒から数秒で返るので、正常に遅い判定がここに掛かることはない。
+ */
+const JUDGE_TIMEOUT_MS = 60_000;
 
 async function judge(side, turn) {
   // 選択肢の取得に失敗していれば model を送らず、サーバーの既定に任せる。
   // 空文字を送るとサーバーが未知のモデルとして 400 で弾く。
   const model = el('llm-pick').value;
   const body = side === 'llm' && model ? { ...turn, model } : turn;
-  const res = await fetch(`/api/judge/${side}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`/api/judge/${side}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    // 打ち切りの message は "signal timed out" で、そのまま画面に出しても何が起きたか伝わらない。
+    if (error.name === 'TimeoutError') {
+      throw new Error(`${JUDGE_TIMEOUT_MS / 1000}秒待っても応答がありません`);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -215,6 +236,12 @@ function updateProgress() {
   el('prev').disabled = state.busy || state.index <= 0;
   el('next').disabled = state.busy || !state.scenario || state.index >= total - 1;
   el('manual-submit').disabled = state.busy;
+  // reset とシナリオ切替も飛行中は殺す。世代を進めて結果を捨てても、
+  // サーバー側では affectus に適用済みで、見ていないターンのぶんが輪に積み上がるため。
+  el('reset').disabled = state.busy;
+  el('scenario').disabled = state.busy;
+  // 走行中の再生を止める操作だけは飛行中でも受け付けるので、そのときは殺さない。
+  el('play').disabled = state.busy && !state.playing;
 }
 
 /** 飛行中かどうかを更新し、ボタンの活殺に反映する。黙ってクリックを無視しないため。 */
@@ -265,6 +292,9 @@ async function play() {
     state.playing = false;
     playRun += 1;
     el('play').textContent = '▶';
+    // 飛行中に止めたなら、ここで再生ボタンを殺す。生かしたままだと
+    // 押しても state.busy で黙って無視される。
+    updateProgress();
     return;
   }
 
@@ -306,28 +336,50 @@ el('next').addEventListener('click', () => {
 el('play').addEventListener('click', play);
 
 el('reset').addEventListener('click', async () => {
+  if (state.busy) return;
   // 再生中なら止める。止めないと、消した直後の輪を再生ループが描き直す。
   state.playing = false;
   playRun += 1;
   el('play').textContent = '▶';
-  // 飛行中のターンが reset 後に解決してパネルを埋め直さないよう、先に世代を進める。
+  // 飛行中のターンは上の guard で弾いているが、世代は念のため進めておく。
+  // 取りこぼしがあると、そのターンが reset 後に解決してパネルを埋め直す。
   generation += 1;
-  await fetch('/api/reset', { method: 'POST' });
-  state.maxLatency = 1;
-  for (const side of ['llm', 'jev']) {
-    // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
-    el(`panel-${side}`).classList.remove('pending');
-    clearSide(side);
-  }
-  // ゼロを描かず、リセット後の実際の状態を読み戻す。
+  // 走っている間は操作を止める。この await の途中で始まったターンは、
+  // resetAffectus と同じ state ファイルに対して二つ目の affectus を走らせる。
+  setBusy(true);
   try {
-    await drawStateWheels();
-  } catch (error) {
-    showError(`感情状態を読み戻せません: ${error.message}`);
+    try {
+      // ok を見ないと、リセットできていないのに輪だけ描き替えて成功したように見せる。
+      const res = await fetch('/api/reset', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (error) {
+      showError(`リセットに失敗しました: ${error.message}`);
+      return;
+    }
+    state.maxLatency = 1;
+    for (const side of ['llm', 'jev']) {
+      // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
+      el(`panel-${side}`).classList.remove('pending');
+      clearSide(side);
+    }
+    // ゼロを描かず、リセット後の実際の状態を読み戻す。
+    try {
+      await drawStateWheels();
+    } catch (error) {
+      showError(`感情状態を読み戻せません: ${error.message}`);
+    }
+  } finally {
+    setBusy(false);
   }
 });
 
 el('scenario').addEventListener('change', async (event) => {
+  // 飛行中の切替は、サーバーが affectus に適用済みのデルタを見ないまま捨てることになる。
+  if (state.busy) {
+    // 選択だけ先に動いているので、読み込み済みのシナリオに戻す。
+    event.target.value = state.scenario?.id ?? '';
+    return;
+  }
   // 再生中にシナリオを変えられたら止める。止めないと古い index のまま
   // 新シナリオを勝手に進み続け、再生ボタンの表示とも食い違う。
   state.playing = false;

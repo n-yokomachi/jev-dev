@@ -94,7 +94,9 @@ delta = (score / 4 - 0.5) * 2        // -1.0 〜 1.0
 
 ### LLM 側
 
-同一の state と同一の指示文を渡し、`generateObject` で8軸の数値（-1.0〜1.0）を一度に出力させる。既定モデルは `anthropic/claude-sonnet-5`。UI から切り替えられる。
+同一の state と同一の指示文を渡し、`generateObject` で8軸の数値（-1.0〜1.0）を一度に出力させる。既定モデルは `anthropic/claude-sonnet-5`。UI から `claude-haiku-4.5` / `claude-opus-5` / `claude-fable-5.1` に切り替えられる。
+
+**配信元は `anthropic` に固定する。** AI Gateway は既定で稼働率とレイテンシを見てプロバイダ（`anthropic` / `bedrock` / `vertex` / `claudeaws`）を動的に選ぶため、固定しなければターンごとに配信元が変わりレイテンシの比較が成立しない。`providerOptions.gateway.only` で限定し、配信元を画面にも表示する。jev は `typesafe-ai` のみが配信するので固定は不要。
 
 変換は行わない。出力値をそのまま affectus に渡す。
 

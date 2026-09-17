@@ -486,6 +486,45 @@ node --test test/
 `dist/` に zip ができる。API キーと感情状態は含まれない。
 ````
 
+- [ ] **Step 8b: `CLAUDE.md` を書く**
+
+配布先の Mac でも Claude Code が使えるため、向こうのエージェントが最初から文脈を持てるようにする。
+
+````markdown
+# CLAUDE.md — jev × LLM 判定対決ビューア
+
+## これは何
+
+同じ会話ターンを TypeSafe の `jev` と LLM の両方に判定させ、判定結果のズレと速度差を1画面で見せるデモ。判定は affectus（Go 製の感情状態エンジン）の感情状態として別々に蓄積される。
+
+設計の根拠は `docs/superpowers/specs/`、実装の手順は `docs/superpowers/plans/` にある。
+
+## 動かす
+
+```bash
+./scripts/setup.sh
+node --env-file=.env.local src/server.ts
+```
+
+`.env.local` に `AI_GATEWAY_API_KEY` が要る。**値をログ・コミット・標準出力に出さないこと。**
+
+## 構成の要点
+
+- **ビルド工程は無い。** Node 24 が `.ts` の型注釈を実行時に除去する。TypeScript コンパイラや `tsconfig.json` を足さないこと
+- テストは `node:test`。`node --test test/` で全件。テストフレームワークを足さないこと
+- 依存は `ai` と `zod` だけ。UI はフレームワーク無しの静的ファイル。バンドラを入れないこと
+- `bin/affectus` は外部プロセスとして呼ぶ。グローバルフラグはサブコマンドの**前**（`affectus --config P --state P feel '<json>'`）
+- 感情の軸は常にこの8つ、この順序: `joy, acceptance, fear, surprise, sorrow, disgust, anger, expectancy`
+- デルタのレンジは `-1.0` 〜 `1.0`
+- **LLM 側の配信元は `anthropic` に固定してある。** レイテンシ比較の条件を揃えるためなので外さないこと
+
+## 触るときの注意
+
+- 問いの文・軸定義・単価・変換係数は `src/constants.ts` に集約してある。判定の挙動を変えたいときはまずここを見る
+- `state/jev.json` と `state/llm.json` は実行のたびに育つ。比較をやり直すときは画面の reset を使う
+- `affectus` 本体（https://github.com/n-yokomachi/affectus）には手を入れない
+````
+
 - [ ] **Step 9: 全テストを実行**
 
 Run: `node --test test/`
@@ -494,7 +533,7 @@ Expected: PASS（7件。Task 1 の4件と Task 1b の3件）
 - [ ] **Step 10: commit**
 
 ```bash
-git add data/transcripts scripts/setup.sh README.md src/constants.ts test/data.test.ts
+git add data/transcripts scripts/setup.sh README.md CLAUDE.md src/constants.ts test/data.test.ts
 git commit -m "feat: 別マシンで動かすための取り込みと初期設定スクリプトを追加"
 ```
 
@@ -772,6 +811,16 @@ export function scoreToDelta(score: number): number {
 export const JEV_MODEL = 'typesafe-ai/jev';
 export const DEFAULT_LLM_MODEL = 'anthropic/claude-sonnet-5';
 
+/**
+ * LLM 側の配信元を固定する。AI Gateway は既定で稼働率とレイテンシを見て
+ * プロバイダ（anthropic / bedrock / vertex / claudeaws）を動的に選ぶため、
+ * 固定しないとターンごとに配信元が変わりレイテンシの比較が成立しない。
+ * jev は typesafe-ai のみが配信するので固定は不要。
+ * https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
+ */
+export const LLM_PROVIDER = 'anthropic';
+export const JEV_PROVIDER = 'typesafe-ai';
+
 export interface ModelPrice {
   inputPerMTok: number;
   outputPerMTok: number;
@@ -908,6 +957,11 @@ test('latencyMs が数値で返る', async () => {
   assert.equal(typeof out.latencyMs, 'number');
   assert.ok(out.latencyMs >= 0);
 });
+
+test('jev の provider は typesafe-ai', async () => {
+  const out = await judgeWithJev(turn, async () => fakeResult());
+  assert.equal(out.provider, 'typesafe-ai');
+});
 ```
 
 - [ ] **Step 4: テストを実行して失敗を確認**
@@ -919,7 +973,7 @@ Expected: FAIL（`../src/judges.ts` が存在しない）
 
 ```ts
 import {
-  AXES, JEV_MODEL, PRICING, SCORE_LEVELS,
+  AXES, JEV_MODEL, JEV_PROVIDER, PRICING, SCORE_LEVELS,
   axisInstruction, scoreToDelta,
   type Axis, type AxisMap,
 } from './constants.ts';
@@ -937,6 +991,7 @@ export interface Usage {
 
 export interface JudgeOutcome {
   model: string;
+  provider: string;
   deltas: AxisMap;
   confidence: Partial<Record<Axis, number>>;
   rawScore: Partial<Record<Axis, number>>;
@@ -1026,6 +1081,7 @@ export async function judgeWithJev(
   const usage = normalizeUsage(result.usage);
   return {
     model: JEV_MODEL,
+    provider: JEV_PROVIDER,
     deltas,
     confidence,
     rawScore,
@@ -1039,7 +1095,7 @@ export async function judgeWithJev(
 - [ ] **Step 6: テストを実行して通過を確認**
 
 Run: `node --test test/judges-jev.test.ts`
-Expected: PASS（9件）
+Expected: PASS（10件）
 
 - [ ] **Step 7: commit**
 
@@ -1113,6 +1169,23 @@ test('コストは入出力の両方を合算する', async () => {
   assert.equal(out.model, 'anthropic/claude-sonnet-5');
 });
 
+test('配信元を anthropic に固定して呼ぶ', async () => {
+  let seen;
+  await judgeWithLlm(turn, async (options) => {
+    seen = options.providerOptions;
+    return { object: fakeObject(), usage: { inputTokens: 0, outputTokens: 0 } };
+  });
+  assert.deepEqual(seen, { gateway: { only: ['anthropic'] } });
+});
+
+test('outcome に provider が入る', async () => {
+  const out = await judgeWithLlm(turn, async () => ({
+    object: fakeObject(),
+    usage: { inputTokens: 0, outputTokens: 0 },
+  }));
+  assert.equal(out.provider, 'anthropic');
+});
+
 test('モデル名を指定できる', async () => {
   const out = await judgeWithLlm(
     turn,
@@ -1141,7 +1214,7 @@ Expected: FAIL（`judgeWithLlm` が export されていない）
 
 - [ ] **Step 3: `src/judges.ts` に追記**
 
-冒頭の import に `AXIS_JA` と `DEFAULT_LLM_MODEL` を加え、`zod` を import する。
+冒頭の import に `AXIS_JA` / `DEFAULT_LLM_MODEL` / `LLM_PROVIDER` を加え、`zod` を import する。
 
 ```ts
 import { z } from 'zod';
@@ -1165,6 +1238,7 @@ export type GenerateObjectFn = (options: {
   model: string;
   schema: typeof DeltaSchema;
   prompt: string;
+  providerOptions: { gateway: { only: string[] } };
 }) => Promise<{
   object: Record<string, number>;
   usage?: { inputTokens?: number; outputTokens?: number };
@@ -1198,7 +1272,12 @@ export async function judgeWithLlm(
   ].join('\n');
 
   const started = performance.now();
-  const result = await generateObjectFn({ model, schema: DeltaSchema, prompt });
+  const result = await generateObjectFn({
+    model,
+    schema: DeltaSchema,
+    prompt,
+    providerOptions: { gateway: { only: [LLM_PROVIDER] } },
+  });
   const latencyMs = Math.round(performance.now() - started);
 
   const deltas = {} as AxisMap;
@@ -1209,6 +1288,7 @@ export async function judgeWithLlm(
   const usage = normalizeUsage(result.usage);
   return {
     model,
+    provider: LLM_PROVIDER,
     deltas,
     confidence: {},
     rawScore: {},
@@ -1222,7 +1302,7 @@ export async function judgeWithLlm(
 - [ ] **Step 4: テストを実行して通過を確認**
 
 Run: `node --test test/judges-llm.test.ts`
-Expected: PASS（6件）
+Expected: PASS（8件）
 
 - [ ] **Step 5: commit**
 
@@ -1267,12 +1347,12 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
     listScenarios: async () => [{ id: 'scenario-a', turnCount: 20 }],
     loadScenario: async (_dir, id) => ({ id, turns: [] }),
     judgeJev: async () => ({
-      model: 'typesafe-ai/jev', deltas: zeroAxes(), confidence: { joy: 0.9 },
+      model: 'typesafe-ai/jev', provider: 'typesafe-ai', deltas: zeroAxes(), confidence: { joy: 0.9 },
       rawScore: { joy: 2 }, latencyMs: 238,
       usage: { inputTokens: 310, outputTokens: 24 }, costUsd: 0.000013,
     }),
     judgeLlm: async () => ({
-      model: 'anthropic/claude-sonnet-5', deltas: zeroAxes(), confidence: {},
+      model: 'anthropic/claude-sonnet-5', provider: 'anthropic', deltas: zeroAxes(), confidence: {},
       rawScore: {}, latencyMs: 2140,
       usage: { inputTokens: 412, outputTokens: 96 }, costUsd: 0.00178,
     }),
@@ -1556,7 +1636,7 @@ Expected: PASS（7件）
 - [ ] **Step 5: 全テストをまとめて実行**
 
 Run: `node --test test/`
-Expected: PASS（38件）
+Expected: PASS（41件）
 
 - [ ] **Step 6: commit**
 
@@ -1980,7 +2060,7 @@ function renderGauges(container, deltas, confidence) {
 
 function renderSide(side, result) {
   el(`panel-${side}`).classList.remove('pending');
-  el(`${side}-model`).textContent = result.model;
+  el(`${side}-model`).textContent = `${result.model} · ${result.provider}`;
   el(`${side}-ms`).innerHTML = `${result.latencyMs.toLocaleString()}<span>ms</span>`;
   el(`${side}-tok`).textContent =
     `${result.usage.inputTokens} / ${result.usage.outputTokens} tok`;
@@ -2122,6 +2202,7 @@ node --env-file=.env.local src/server.ts
 - 中央の L1 距離に数値が入る
 - 中央の「当時の自己申告」に transcripts の記録値が出ている
 - LLM パネル上部のモデル選択に4つのモデルが並び、既定が `claude-sonnet-5` になっている
+- 両パネルのモデル名の右に配信元が出ている（LLM 側は `anthropic`、jev 側は `typesafe-ai`）
 
 - [ ] **Step 3: 自動再生とリセットを確認**
 
@@ -2134,7 +2215,7 @@ node --env-file=.env.local src/server.ts
 - [ ] **Step 5: 全テストを実行**
 
 Run: `node --test test/`
-Expected: PASS（38件）
+Expected: PASS（41件）
 
 - [ ] **Step 6: commit**
 
@@ -2193,7 +2274,7 @@ else
 fi
 
 # 2. 中身を集める
-for item in src public data scripts test docs package.json package-lock.json README.md; do
+for item in src public data scripts test docs package.json package-lock.json README.md CLAUDE.md; do
   cp -R "$item" "$STAGE/"
 done
 cp -R node_modules "$STAGE/node_modules"
@@ -2297,6 +2378,8 @@ git commit -m "feat: 配布 zip を作るスクリプトを追加"
 | 可搬性（絶対パスの排除・データの取り込み） | Task 1b |
 | `scripts/setup.sh`（6手順・冪等） | Task 1b Step 6, 7 |
 | README（別マシンでの手順） | Task 1b Step 8 |
+| CLAUDE.md（配布先の Claude Code 向け文脈） | Task 1b Step 8b |
+| LLM 配信元の固定（`anthropic`） | Task 4（定数）／ Task 5（呼び出し）／ Task 8（表示） |
 | 配布 zip の同梱物と除外物 | Task 9 Step 2, 3 |
 | universal binary（arm64 + x86_64） | Task 9 Step 2 |
 | Gatekeeper の隔離属性の除去 | Task 1b Step 6（`setup.sh` 内） |

@@ -65,4 +65,9 @@ npm test
 ./scripts/package.sh
 ```
 
-`dist/` に zip ができる。API キーと感情状態は含まれない。
+`dist/jev-duel-<日付>.zip` ができる。**API キーと感情状態は含まれない。**
+受け取った側は `setup.sh` の案内に従って自分のキーを `.env.local` に書く。
+
+`--with-key` を付けると `.env.local` をそのまま同梱し、ファイル名が
+`jev-duel-<日付>-withkey.zip` になる。**この zip を渡した相手は、そのキーで課金できる。**
+受け取り手を限れる場合にだけ使う。

@@ -43,6 +43,155 @@ export function drawWheel(container, values) {
   container.innerHTML = parts.join('');
 }
 
-const zero = Object.fromEntries(AXES.map((a) => [a, 0]));
-drawWheel(document.getElementById('wheel-llm'), zero);
-drawWheel(document.getElementById('wheel-jev'), zero);
+const state = {
+  scenario: null,
+  index: 0,
+  playing: false,
+  maxLatency: 1,
+};
+
+const el = (id) => document.getElementById(id);
+
+function renderGauges(container, deltas, confidence) {
+  container.innerHTML = AXES.map((axis) => {
+    const v = deltas?.[axis] ?? 0;
+    const width = Math.abs(v) * 50;
+    const bar = v >= 0
+      ? `<b style="left:50%;width:${width}%"></b>`
+      : `<b style="right:50%;width:${width}%"></b>`;
+    const conf = confidence?.[axis] !== undefined
+      ? `<span class="conf" style="left:${50 + (v >= 0 ? 1 : -1) * confidence[axis] * 50}%"></span>`
+      : '';
+    const sign = v > 0 ? '+' : '';
+    return `<div class="axis"><span class="nm">${axis.slice(0, 7)}</span>` +
+      `<span class="gauge">${bar}${conf}</span>` +
+      `<span class="val">${sign}${v.toFixed(2)}</span></div>`;
+  }).join('');
+}
+
+function renderSide(side, result) {
+  el(`panel-${side}`).classList.remove('pending');
+  el(`${side}-model`).textContent = `${result.model} · ${result.provider}`;
+  el(`${side}-ms`).innerHTML = `${result.latencyMs.toLocaleString()}<span>ms</span>`;
+  el(`${side}-tok`).textContent =
+    `${result.usage.inputTokens} / ${result.usage.outputTokens} tok`;
+  el(`${side}-cost`).textContent = `$${result.costUsd.toFixed(6)}`;
+  state.maxLatency = Math.max(state.maxLatency, result.latencyMs);
+  el(`${side}-track`).style.width = `${(result.latencyMs / state.maxLatency) * 100}%`;
+  renderGauges(el(`${side}-gauges`), result.deltas, result.confidence);
+  drawWheel(el(`wheel-${side}`), result.axes);
+}
+
+function l1(a, b) {
+  return AXES.reduce((sum, axis) => sum + Math.abs((a?.[axis] ?? 0) - (b?.[axis] ?? 0)), 0);
+}
+
+async function judge(side, turn) {
+  const body = side === 'llm' ? { ...turn, model: el('llm-pick').value } : turn;
+  const res = await fetch(`/api/judge/${side}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${side}: ${res.status}`);
+  return res.json();
+}
+
+async function runTurn(turn) {
+  el('turn-user').textContent = turn.user;
+  el('turn-agent').textContent = turn.agent;
+  el('self-report').textContent = turn.deltas
+    ? `当時の自己申告：${Object.entries(turn.deltas)
+        .map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`)
+        .join(' / ')}`
+    : '当時の自己申告：—';
+  el('l1').textContent = '—';
+  el('panel-llm').classList.add('pending');
+  el('panel-jev').classList.add('pending');
+
+  const results = {};
+  const both = ['llm', 'jev'].map((side) =>
+    judge(side, { user: turn.user, agent: turn.agent })
+      .then((result) => {
+        results[side] = result;
+        renderSide(side, result);
+      })
+      .catch((error) => {
+        el(`panel-${side}`).classList.remove('pending');
+        el(`${side}-model`).textContent = `error: ${error.message}`;
+      }),
+  );
+
+  await Promise.allSettled(both);
+  if (results.llm && results.jev) {
+    el('l1').textContent = l1(results.llm.deltas, results.jev.deltas).toFixed(2);
+  }
+}
+
+function updateProgress() {
+  const total = state.scenario?.turns.length ?? 0;
+  el('progress').textContent = `turn ${total ? state.index + 1 : '—'} / ${total || '—'}`;
+  el('prev').disabled = state.index <= 0;
+  el('next').disabled = !state.scenario || state.index >= total - 1;
+}
+
+async function showTurn(index) {
+  if (!state.scenario) return;
+  state.index = Math.min(Math.max(0, index), state.scenario.turns.length - 1);
+  updateProgress();
+  await runTurn(state.scenario.turns[state.index]);
+}
+
+async function loadScenario(id) {
+  const res = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
+  state.scenario = await res.json();
+  state.index = 0;
+  updateProgress();
+}
+
+async function play() {
+  state.playing = !state.playing;
+  el('play').textContent = state.playing ? '❙❙' : '▶';
+  while (state.playing && state.scenario && state.index < state.scenario.turns.length) {
+    await showTurn(state.index);
+    if (state.index >= state.scenario.turns.length - 1) break;
+    state.index += 1;
+  }
+  state.playing = false;
+  el('play').textContent = '▶';
+}
+
+el('prev').addEventListener('click', () => showTurn(state.index - 1));
+el('next').addEventListener('click', () => showTurn(state.index + 1));
+el('play').addEventListener('click', play);
+
+el('reset').addEventListener('click', async () => {
+  await fetch('/api/reset', { method: 'POST' });
+  const zero = Object.fromEntries(AXES.map((a) => [a, 0]));
+  drawWheel(el('wheel-llm'), zero);
+  drawWheel(el('wheel-jev'), zero);
+  state.maxLatency = 1;
+});
+
+el('scenario').addEventListener('change', (event) => loadScenario(event.target.value));
+
+el('manual').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await runTurn({ user: el('manual-user').value, agent: el('manual-agent').value, deltas: null });
+});
+
+const initial = Object.fromEntries(AXES.map((a) => [a, 0]));
+drawWheel(el('wheel-llm'), initial);
+drawWheel(el('wheel-jev'), initial);
+
+const { models, default: defaultModel } = await (await fetch('/api/models')).json();
+el('llm-pick').innerHTML = models
+  .map((m) => `<option value="${m}">${m.replace('anthropic/', '')}</option>`)
+  .join('');
+el('llm-pick').value = defaultModel;
+
+const scenarios = await (await fetch('/api/scenarios')).json();
+el('scenario').innerHTML = scenarios
+  .map((s) => `<option value="${s.id}">${s.id}</option>`)
+  .join('');
+if (scenarios.length > 0) await loadScenario(scenarios[0].id);

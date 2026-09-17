@@ -203,7 +203,50 @@ test('POST /api/reply は返答と生成のレイテンシを返す', async () =
   assert.equal(body.reply, 'そう、ですか。');
   // 生成の時間は判定とは別の数字として返る。
   assert.equal(body.latencyMs, 1180);
-  assert.deepEqual(seen, { user: 'u', axes: { ...zeroAxes(), sorrow: 0.4 } });
+  // persona を省略したら既定の人格で生成する。
+  assert.deepEqual(seen, { user: 'u', axes: { ...zeroAxes(), sorrow: 0.4 }, persona: 'friendly' });
+  shutdown(server);
+});
+
+test('POST /api/reply は指定された人格を生成に渡す', async () => {
+  let seen: unknown;
+  const server = createServer(deps({
+    generateReply: async (input) => {
+      seen = input;
+      return {
+        model: 'anthropic/claude-haiku-4.5', provider: 'anthropic',
+        reply: '別に。', latencyMs: 1180,
+        usage: { inputTokens: 520, outputTokens: 64 }, costUsd: 0.00084,
+      };
+    },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', axes: zeroAxes(), persona: 'contrarian' }),
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(seen, { user: 'u', axes: zeroAxes(), persona: 'contrarian' });
+  shutdown(server);
+});
+
+test('POST /api/reply は未知の人格を 400 で弾き、生成を呼ばない', async () => {
+  // 黙って既定に落とすと、画面の選択と実際に渡った人格が食い違ったまま課金される。
+  let called = 0;
+  const server = createServer(deps({
+    generateReply: async () => { called += 1; throw new Error('呼ばれてはいけない'); },
+  }));
+  const base = await listen(server);
+  for (const persona of ['neutral', 'toString', 42, null]) {
+    const res = await fetch(`${base}/api/reply`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ user: 'u', axes: zeroAxes(), persona }),
+    });
+    assert.equal(res.status, 400, `persona=${JSON.stringify(persona)} が 400 にならない`);
+  }
+  assert.equal(called, 0, '生成は呼ばれないこと');
   shutdown(server);
 });
 

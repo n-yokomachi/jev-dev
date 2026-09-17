@@ -49,6 +49,11 @@ body {
 .topbar button:disabled { opacity: .4; cursor: default; }
 .transport { display: flex; gap: 6px; }
 
+/* シナリオと人格の選択。窓が狭いときは topbar と同じように折り返す。 */
+.picks { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.picks .tag { color: var(--dim); letter-spacing: .12em; }
+.topbar select:disabled { opacity: .4; cursor: default; }
+
 .notice {
   background: var(--panel);
   border: 1px solid var(--llm);

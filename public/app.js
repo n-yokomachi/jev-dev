@@ -239,13 +239,15 @@ async function judge(side, turn) {
 /**
  * 判定を適用したあとの感情状態で返答を生成する。
  * 判定が返ってから呼ぶ別フェーズであり、判定のレイテンシには入らない。
+ *
+ * persona は両側で同じものを渡す。変えるのは判定器だけ、という比較を保つため。
  */
-async function requestReply(user, axes) {
+async function requestReply(user, axes, persona) {
   try {
     const res = await fetch('/api/reply', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ user, axes }),
+      body: JSON.stringify({ user, axes, persona }),
       signal: AbortSignal.timeout(REPLY_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -274,6 +276,9 @@ async function runTurn(turn) {
 async function runTurnInner(turn) {
   const gen = ++generation;
   clearNotice();
+  // 人格はターンの頭で一度だけ読み、両側に同じものを渡す。側ごとに読み直すと、
+  // 「変えるのは判定器だけ」という比較が崩れうる。
+  const persona = el('persona').value;
   // 発言は入力欄の中身がそのまま入力になる。ここでは書き戻さない。
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
@@ -306,7 +311,7 @@ async function runTurnInner(turn) {
 
     // 判定を適用したあとの感情状態で返答を作る。ここから先は別フェーズ。
     try {
-      const outcome = await requestReply(turn.user, result.axes);
+      const outcome = await requestReply(turn.user, result.axes, persona);
       if (gen !== generation) return;
       renderReply(side, outcome);
     } catch (error) {
@@ -333,6 +338,9 @@ function updateProgress() {
   // サーバー側では affectus に適用済みで、見ていないターンのぶんが輪に積み上がるため。
   el('reset').disabled = state.busy;
   el('scenario').disabled = state.busy;
+  // 人格も飛行中は凍らせる。走っているのは送信した時点の人格であり、
+  // 途中で変えられると画面の選択と実際に生成に渡った人格が食い違う。
+  el('persona').disabled = state.busy;
   // 走行中の再生を止める操作だけは飛行中でも受け付けるので、そのときは殺さない。
   el('play').disabled = state.busy && !state.playing;
 }
@@ -364,6 +372,15 @@ async function playTurn(index) {
   await runTurn({ user: state.scenario.turns[state.index].user });
 }
 
+/**
+ * シナリオ名から人格を決める。トランスクリプトは friendly / contrarian の
+ * どちらかの人格で記録されており、ファイル名にその名前が入っている。
+ * 記録時と違う人格で再生すると、発言と返答が噛み合わない。
+ */
+export function personaForScenario(id) {
+  return String(id).includes('contrarian') ? 'contrarian' : 'friendly';
+}
+
 async function loadScenario(id) {
   const res = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
   // ok を見ないと、エラー応答の JSON がそのままシナリオとして state に入り、
@@ -371,6 +388,8 @@ async function loadScenario(id) {
   if (!res.ok) throw new Error(`シナリオ ${id} を読み込めません（HTTP ${res.status}）`);
   state.scenario = await res.json();
   state.index = 0;
+  // 記録された人格に合わせる。送信前なら手で変えられる。
+  el('persona').value = personaForScenario(id);
   // 切替前のターンが飛行中なら、その結果は捨てる。
   generation += 1;
   el('l1').textContent = '—';

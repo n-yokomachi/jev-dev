@@ -8,7 +8,14 @@
 </head>
 <body>
 <header class="topbar">
-  <select id="scenario"></select>
+  <span class="picks">
+    <select id="scenario"></select>
+    <label class="tag" for="persona">人格</label>
+    <select id="persona" title="返答生成に与える人格。両側とも同じ人格を使うので、違うのは判定器だけです">
+      <option value="friendly">friendly（明るく協力的）</option>
+      <option value="contrarian">contrarian（天邪鬼）</option>
+    </select>
+  </span>
   <span id="progress">turn — / —</span>
   <span class="transport">
     <button id="prev">◀</button>

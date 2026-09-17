@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildJevQuestions, judgeWithLlm, llmInstruction } from '../src/judges.ts';
-import { AXES, CURRENT_STATE_NOTE, type AxisMap } from '../src/constants.ts';
+import { AXES, CURRENT_STATE_NOTE, PERSONA_IDS, PERSONAS, type AxisMap } from '../src/constants.ts';
 
 function axesOf(overrides: Partial<AxisMap> = {}): AxisMap {
   const axes = {} as AxisMap;
@@ -164,4 +164,23 @@ test('数値でない軸は投げる。0 に丸めて「変化なし」にしな
     () => judgeWithLlm(turn, async () => ({ object, usage: { inputTokens: 0, outputTokens: 0 } })),
     /anger/,
   );
+});
+
+test('判定には人格を与えない', async () => {
+  // 判定は「この発言で感情がどう動くか」であって、人格の演技ではない。
+  // 人格が混ざると、判定の差に人格の差が乗る。
+  for (const id of PERSONA_IDS) {
+    assert.ok(!llmInstruction().includes(PERSONAS[id].text), `llmInstruction に ${id} が混ざっている`);
+    assert.ok(
+      !buildJevQuestions().joy.instructions.includes(PERSONAS[id].text),
+      `jev の問い文に ${id} が混ざっている`,
+    );
+  }
+
+  let seen = '';
+  await judgeWithLlm(turn, async (options) => {
+    seen = options.prompt;
+    return { object: fakeObject(), usage: { inputTokens: 0, outputTokens: 0 } };
+  });
+  assert.doesNotMatch(seen, /天邪鬼|明るく協力的/);
 });

@@ -1,9 +1,14 @@
-import { AXES, AXIS_JA, LLM_PROVIDER, REPLY_MODEL, type AxisMap } from './constants.ts';
+import {
+  AXES, AXIS_JA, LLM_PROVIDER, PERSONAS, REPLY_MODEL,
+  type AxisMap, type PersonaId,
+} from './constants.ts';
 import { costUsd, normalizeUsage, type Usage } from './judges.ts';
 
 export interface ReplyInput {
   user: string;
   axes: AxisMap;
+  /** 両側で同じものを使う。変えるのは判定器だけ、という比較を保つため。 */
+  persona: PersonaId;
 }
 
 export interface ReplyOutcome {
@@ -27,17 +32,23 @@ export type GenerateTextFn = (options: {
 /**
  * 生成側の指示。affectus の運用方針（examples/system-prompt-snippet.md）に倣う。
  *
+ * 先頭に人格を置く。人格が「誰が話しているか」を、軸が「今どう感じているか」を決める。
+ * affectus は人格の指示する方向への応答感度を上げるアンプなので、
+ * 人格が無ければ感情は色をつける先を持たない。
+ *
  * 値は閾値もラベルも付かない生の数値として渡し、解釈はモデルに委ねる。
  * 読み方は相対的な大きさとプルチックの構造（対極・隣接）で与え、
  * 出てきた感情は口調・語彙・間の取り方に出させる。感情そのものは言葉にさせない。
  *
- * 両側でこの文言は同一。違うのは渡す感情状態だけであり、
+ * 人格を固定すれば、両側でこの文言は同一になる。違うのは渡す感情状態だけであり、
  * 返答の差はそのまま判定の差に由来する。
  */
-export function replyInstruction(): string {
+export function replyInstruction(persona: PersonaId): string {
   const axisList = AXES.map((axis) => `${axis}（${AXIS_JA[axis]}）`).join('、');
   return [
-    'あなたは今から示す感情状態を持つ話し手として、user の発言に返答してください。',
+    PERSONAS[persona].text,
+    '',
+    'この人格のまま、今から示す感情状態にある話し手として、user の発言に返答してください。',
     '',
     `感情の軸は8つ: ${axisList}。値は 0.0〜1.0 の生の数値で、閾値もラベルも付いていません。`,
     '次の構造にしたがって、数値を関係として読んでください。',
@@ -67,7 +78,7 @@ export function formatAxes(axes: AxisMap): string {
 
 export function buildReplyPrompt(input: ReplyInput): string {
   return [
-    replyInstruction(),
+    replyInstruction(input.persona),
     '',
     '現在の感情状態:',
     formatAxes(input.axes),

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { AXES } from '../src/constants.ts';
+import { AXES, PERSONA_IDS, PERSONAS } from '../src/constants.ts';
 
 /**
  * public/ はブラウザ向けで Node からは import できない。
@@ -171,4 +171,71 @@ test('ターンの開始で前ターンの生の入出力を消す', async () =>
 test('自動再生ボタンは自動で送信することが分かる表記になっている', async () => {
   const html = await read('index.html');
   assert.match(html, /id="play"[^>]*>[^<]*自動送信/);
+});
+
+test('人格の選択肢は src/constants.ts の PERSONAS と一致する', async () => {
+  const html = await read('index.html');
+  const select = html.match(/<select id="persona"[\s\S]*?<\/select>/);
+  assert.ok(select, 'index.html に人格の選択欄が無い');
+  const options = [...select[0].matchAll(/<option value="([^"]+)">([^<]*)<\/option>/g)];
+  assert.deepEqual(options.map((m) => m[1]), [...PERSONA_IDS]);
+  // 表記もサーバー側の定義に揃える。ずれると、画面の名前と指示文の中身が食い違う。
+  assert.deepEqual(options.map((m) => m[2]), PERSONA_IDS.map((id) => PERSONAS[id].label));
+});
+
+test('人格の選択はシナリオ選択と同じ場所（topbar）に置く', async () => {
+  const html = await read('index.html');
+  const topbar = html.slice(html.indexOf('<header class="topbar">'), html.indexOf('</header>'));
+  assert.match(topbar, /id="scenario"/);
+  assert.match(topbar, /id="persona"/);
+});
+
+test('返答生成に人格を送る。両側とも同じ人格', async () => {
+  const source = await read('app.js');
+  assert.match(source, /body: JSON\.stringify\(\{ user, axes, persona \}\)/);
+  // ターンの頭で一度だけ読み、両側の生成に同じ値を渡す。
+  const inner = source.match(/async function runTurnInner\(turn\) \{[\s\S]*?\n\}\n/);
+  assert.ok(inner, 'runTurnInner の定義が見つからない');
+  assert.match(inner[0], /const persona = el\('persona'\)\.value;/);
+  assert.equal((inner[0].match(/requestReply\(turn\.user, result\.axes, persona\)/g) ?? []).length, 1);
+});
+
+test('判定には人格を送らない', async () => {
+  const source = await read('app.js');
+  const judge = source.match(/async function judge\(side, turn\) \{[\s\S]*?\n\}\n/);
+  assert.ok(judge, 'judge の定義が見つからない');
+  assert.doesNotMatch(judge[0], /persona/);
+});
+
+test('シナリオを選ぶと、記録時の人格が選ばれる', async () => {
+  const source = await read('app.js');
+  // ファイル名に friendly / contrarian が入っている。記録時と違う人格で再生すると噛み合わない。
+  const pick = source.match(/export function personaForScenario\(id\) \{[\s\S]*?\n\}\n/);
+  assert.ok(pick, 'personaForScenario の定義が見つからない');
+  assert.match(pick[0], /contrarian/);
+  assert.match(pick[0], /friendly/);
+  const loader = source.match(/async function loadScenario\(id\) \{[\s\S]*?\n\}\n/);
+  assert.ok(loader, 'loadScenario の定義が見つからない');
+  assert.match(loader[0], /el\('persona'\)\.value = personaForScenario\(id\)/);
+  // 選ぶだけ。ここで実行してはいけない。
+  assert.doesNotMatch(loader[0], /runTurn\(/);
+});
+
+test('実データのシナリオ名はすべて人格に対応づく', async () => {
+  const { readdir } = await import('node:fs/promises');
+  const files = (await readdir(new URL('../data/transcripts', import.meta.url)))
+    .filter((f) => f.endsWith('.jsonl'));
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    const hit = PERSONA_IDS.filter((id) => file.includes(id));
+    assert.equal(hit.length, 1, `${file}: 人格が一意に決まらない`);
+  }
+});
+
+test('判定が飛行中は人格も凍らせる', async () => {
+  const source = await read('app.js');
+  const update = source.match(/function updateProgress\(\) \{[\s\S]*?\n\}\n/);
+  assert.ok(update, 'updateProgress の定義が見つからない');
+  // 途中で変えられると、画面の選択と実際に生成に渡った人格が食い違う。
+  assert.match(update[0], /el\('persona'\)\.disabled = state\.busy;/);
 });

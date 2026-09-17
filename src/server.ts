@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { experimental_evaluate as evaluate, generateObject, generateText } from 'ai';
 import {
-  AXES, DEFAULT_LLM_MODEL, LLM_MODELS, PROJECT_ROOT, TRANSCRIPT_DIR, type AxisMap,
+  AXES, DEFAULT_LLM_MODEL, DEFAULT_PERSONA, LLM_MODELS, PROJECT_ROOT, TRANSCRIPT_DIR,
+  isPersonaId, type AxisMap, type PersonaId,
 } from './constants.ts';
 import { listScenarios, loadScenario, type Scenario, type ScenarioSummary } from './transcripts.ts';
 import {
@@ -159,6 +160,17 @@ function parseAxesBody(value: unknown): AxisMap {
 }
 
 /**
+ * 使う人格を選ぶ。未知の名前を黙って既定に落とすと、画面が選んだつもりの人格と
+ * 実際に生成に渡った人格が食い違い、返答の差がどこから来たのか読めなくなる。
+ * 省略時だけ既定を使う。
+ */
+function parsePersonaBody(value: unknown): PersonaId {
+  if (value === undefined) return DEFAULT_PERSONA;
+  if (!isPersonaId(value)) throw new HttpError(400, '未知の人格です');
+  return value;
+}
+
+/**
  * 返答の生成。判定が返ったあとに走る別フェーズなので、
  * 判定の latencyMs には入らず、自分の latencyMs を持つ。
  */
@@ -173,7 +185,8 @@ async function handleReply(
     throw new HttpError(400, 'user は必須の文字列です');
   }
   const axes = parseAxesBody(body.axes);
-  sendJson(res, 200, await deps.generateReply({ user, axes }));
+  const persona = parsePersonaBody(body.persona);
+  sendJson(res, 200, await deps.generateReply({ user, axes, persona }));
 }
 
 export function createServer(deps: ServerDeps) {

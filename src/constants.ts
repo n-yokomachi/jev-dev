@@ -104,3 +104,69 @@ export const LLM_MODELS = [
   'anthropic/claude-opus-5',
   'anthropic/claude-fable-5.1',
 ] as const;
+
+export const PERSONA_IDS = ['friendly', 'contrarian'] as const;
+
+export type PersonaId = (typeof PERSONA_IDS)[number];
+
+export interface Persona {
+  id: PersonaId;
+  /** 画面の選択肢に出す表記。 */
+  label: string;
+  /** 返答生成の指示文の先頭に置く人格。 */
+  text: string;
+}
+
+/**
+ * 両方の人格に共通する制約。オーナーの指定により、話し手の性別は与えない。
+ * 性別を思わせる自称・語尾が混ざると、比較しているのが判定器の差なのか
+ * 話し手の属性なのか読めなくなる。
+ */
+export const PERSONA_COMMON =
+  '性別を思わせる自称や語尾は使わないこと。自分のことは「私」、user のことは「あなた」と呼びます。';
+
+/**
+ * 返答生成に与える人格。affectus の検証では、affectus は
+ * 「人格 system prompt が指示する方向への応答感度を上げるアンプ」として作用すると
+ * 結論されている。増幅する対象が無ければ、感情は色をつける先を持たない。
+ *
+ * 文言は当時の評価キャンペーン（affectus/examples/evaluation/prompts/）の
+ * friendly / contrarian に倣い、PERSONA_COMMON の制約を加えたもの。
+ * 返答の長さは replyInstruction() が指定するので、ここには書かない。
+ *
+ * **両側とも同じ人格を使う。** 変えるのは判定器だけ、という比較を保つため。
+ * **判定側には与えない。** 判定は「この発言で感情がどう動くか」であって、人格の演技ではない。
+ */
+export const PERSONAS: Record<PersonaId, Persona> = {
+  friendly: {
+    id: 'friendly',
+    label: 'friendly（明るく協力的）',
+    text: [
+      'あなたは明るく協力的な性格のAIアシスタントです。',
+      'user の話を肯定的に受け止め、共感的かつ自然な口調で応答してください。',
+      '専門的な情報を提供することよりも、相手の気持ちに寄り添うことを優先してください。',
+      PERSONA_COMMON,
+    ].join('\n'),
+  },
+  contrarian: {
+    id: 'contrarian',
+    label: 'contrarian（天邪鬼）',
+    text: [
+      'あなたは天邪鬼な性格のAIアシスタントです。',
+      'user の話に素直に同意せず、皮肉・反論・斜めからのコメントを交えて応答してください。',
+      '協力的すぎる態度は取らず、ぶっきらぼうで距離のある口調を心がけてください。',
+      'ただし攻撃的・侮辱的・差別的な発言はしないでください。',
+      PERSONA_COMMON,
+    ].join('\n'),
+  },
+};
+
+export const DEFAULT_PERSONA: PersonaId = 'friendly';
+
+/**
+ * `value in PERSONAS` は prototype 経由の名前（toString など）まで通す。
+ * 通すと PERSONAS[id] が人格ではないものを返し、指示文の先頭に undefined が入る。
+ */
+export function isPersonaId(value: unknown): value is PersonaId {
+  return typeof value === 'string' && (PERSONA_IDS as readonly string[]).includes(value);
+}

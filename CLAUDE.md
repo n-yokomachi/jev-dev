@@ -9,7 +9,7 @@
 ## 動かす
 
 ```bash
-./scripts/setup.sh
+bash scripts/setup.sh
 node --env-file=.env.local src/server.ts
 ```
 

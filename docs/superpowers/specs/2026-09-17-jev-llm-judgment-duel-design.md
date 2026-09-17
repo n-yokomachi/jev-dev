@@ -246,7 +246,7 @@ jev 側のゲージには軸ごとの `confidence` を点線マーカーとし�
 ## 実行手順
 
 ```bash
-./scripts/setup.sh                        # 依存・バイナリ・感情状態を揃える
+bash scripts/setup.sh                     # 依存・バイナリ・感情状態を揃える
 # .env.local に AI_GATEWAY_API_KEY を書く
 node --env-file=.env.local src/server.ts
 ```
@@ -288,7 +288,7 @@ lipo -create -output bin/affectus build/affectus-arm64 build/affectus-amd64
 
 ```bash
 unzip jev-duel-<日付>.zip && cd jev-duel-<日付>
-./scripts/setup.sh
+bash scripts/setup.sh
 # 案内に従って .env.local に鍵を書く
 node --env-file=.env.local src/server.ts
 ```

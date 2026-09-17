@@ -13,7 +13,7 @@
 ## 使い方
 
 ```bash
-./scripts/setup.sh
+bash scripts/setup.sh
 # 案内に従って .env.local に API キーを書く
 node --env-file=.env.local src/server.ts
 ```

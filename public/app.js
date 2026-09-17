@@ -127,6 +127,11 @@ function l1(a, b) {
   return AXES.reduce((sum, axis) => sum + Math.abs((a?.[axis] ?? 0) - (b?.[axis] ?? 0)), 0);
 }
 
+/** 輪に渡せる形か。null も配列も軸の値として読めない。 */
+function isAxisMap(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * サーバーの感情状態を読んで両方の輪を描く。
  * 状態はファイルに永続するので、ゼロから描き始めると次の判定が返った瞬間に
@@ -139,6 +144,12 @@ async function drawStateWheels(gen = generation) {
   const res = await fetch('/api/state');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const current = await res.json();
+  // 形も見る。欠けたまま drawWheel に渡すと values[axis] の読み出しで例外になり、
+  // 何が足りなかったのか分からない失敗として上がる。
+  // ここで投げれば、呼び出し側が通知に理由を出し、輪はゼロのまま残る。
+  if (!isAxisMap(current?.jev) || !isAxisMap(current?.llm)) {
+    throw new Error('応答に jev と llm の感情状態が入っていません');
+  }
   if (gen !== generation) return;
   drawWheel(el('wheel-llm'), current.llm);
   drawWheel(el('wheel-jev'), current.jev);
@@ -197,10 +208,10 @@ async function runTurnInner(turn) {
   el('turn-user').textContent = turn.user;
   el('turn-agent').textContent = turn.agent;
   el('self-report').textContent = turn.deltas
-    ? `当時の自己申告：${Object.entries(turn.deltas)
+    ? `agent の自己申告（記録時）：${Object.entries(turn.deltas)
         .map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`)
         .join(' / ')}`
-    : '当時の自己申告：—';
+    : 'agent の自己申告（記録時）：—';
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
     el(`panel-${side}`).classList.add('pending');
@@ -269,7 +280,7 @@ async function loadScenario(id) {
   generation += 1;
   el('turn-user').textContent = '—';
   el('turn-agent').textContent = '—';
-  el('self-report').textContent = '当時の自己申告：—';
+  el('self-report').textContent = 'agent の自己申告（記録時）：—';
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
     // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。

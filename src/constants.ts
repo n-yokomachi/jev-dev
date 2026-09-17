@@ -33,12 +33,29 @@ export const SCORE_LEVELS = [
 ] as const;
 
 /**
+ * 現在の感情状態の読み方。**両者の指示文にこの同じ文言を入れる。**
+ *
+ * affectus の agent は毎ターン自分の状態を読んでから、その発言で感情がどう動くかを
+ * 申告する。既に anger が 0.9 なら、さらに挑発されても動く余地は小さい。
+ * 現在値を渡さない判定は、この依存を落としたまま答えることになる。
+ *
+ * 文言を共有するのは、比較の前提が「両者が同じ課題を同じ言葉で与えられること」だから。
+ * 片方だけ現在値の扱いを説明すると、判定の差に指示文の差が混ざる。
+ */
+export const CURRENT_STATE_NOTE =
+  'axes は判定の直前に読んだあなた自身の現在の感情状態で、各軸 0.0〜1.0 の生の値です。'
+  + 'その現在値を踏まえて、そこからどれだけ動くかを答えてください。'
+  + '既に高い軸は上がる余地が小さく、低い軸は下がる余地が小さくなります。';
+
+/**
  * 判定は「過去の観察」ではなく「自分の反応」を問う。affectus の agent は
  * 他人の会話を見て感情の動きを当てるのではなく、言われたことに対して
  * 自分の感情がどう動くかを決める。問い文もその形に揃える。
+ *
+ * 現在値の扱いは CURRENT_STATE_NOTE を LLM 側と共有する。
  */
 export function axisInstruction(axis: Axis): string {
-  return `この発言を受けて、あなたの「${AXIS_JA[axis]}」はどう動くか`;
+  return `${CURRENT_STATE_NOTE}\nこの発言を受けて、あなたの「${AXIS_JA[axis]}」はどう動くか`;
 }
 
 export function scoreToDelta(score: number): number {

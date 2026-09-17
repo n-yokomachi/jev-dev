@@ -1,20 +1,28 @@
 import { z } from 'zod';
 import {
-  AXES, AXIS_JA, DEFAULT_LLM_MODEL, JEV_MODEL, JEV_PROVIDER, LLM_PROVIDER, PRICING, SCORE_LEVELS,
+  AXES, AXIS_JA, CURRENT_STATE_NOTE, DEFAULT_LLM_MODEL, JEV_MODEL, JEV_PROVIDER, LLM_PROVIDER,
+  PRICING, SCORE_LEVELS,
   axisInstruction, scoreToDelta,
   type Axis, type AxisMap,
 } from './constants.ts';
 import { confidenceFromProbabilities } from './confidence.ts';
 
 /**
- * 判定の入力。user の発言のみを渡す。
+ * 判定の入力。判定の直前に読んだ現在の8軸と、user の発言。
+ *
+ * 現在値を渡すのは、affectus の agent が毎ターン自分の状態を読んでから
+ * 感情の動きを申告するため。現在値の無い判定は、この依存を落としたまま答えることになり、
+ * このデモが測ろうとしている課題そのものを再現しない。
  *
  * 記録された返答（agent）は含めない。affectus の agent は他人の会話を見て
  * 感情の動きを当てるのではなく、言われたことに対して自分の感情がどう動くかを決める。
- * 両側が同じ入力を受け取ることで、状態の分岐は判定の違いだけに由来すると言い切れる。
+ *
+ * 両側はそれぞれ自分の状態に対して判定するため、状態が分岐した2ターン目以降は入力も分かれる。
+ * 実運用でもそうなる。公平性は「同じ状態から出発した最初の判定」で担保する。
  */
 export interface TurnInput {
   user: string;
+  axes: AxisMap;
 }
 
 export interface Usage {
@@ -69,6 +77,19 @@ export function buildJevQuestions(): Record<Axis, ScoreQuestion> {
   return questions;
 }
 
+/**
+ * 判定に渡す入力。両者に同じ形・同じ順序で渡す。
+ *
+ * 軸は固定の順序に並べ、小数2桁に丸める。affectus が返す値は
+ * 0.9660641141415135 のような長い float で、下の桁は判定に効かず入力のノイズになる。
+ * 丸め方は返答生成（reply.ts の formatAxes）と揃える。
+ */
+export function buildJudgeInput(turn: TurnInput): { axes: AxisMap; user: string } {
+  const axes = {} as AxisMap;
+  for (const axis of AXES) axes[axis] = Number((turn.axes[axis] ?? 0).toFixed(2));
+  return { axes, user: turn.user };
+}
+
 export function costUsd(model: string, usage: Usage): number {
   const price = PRICING[model];
   if (!price) throw new Error(`unknown model price: ${model}`);
@@ -108,7 +129,7 @@ export async function judgeWithJev(
   // 問いと state の構築は計測区間の外で行う。設計書が latencyMs を
   // 「モデル呼び出しの区間のみ」と定めており、LLM 側も同じ形にしてあるため。
   const questions = buildJevQuestions();
-  const state = { user: turn.user };
+  const state = buildJudgeInput(turn);
 
   const started = performance.now();
   const result = await evaluateFn({ model: JEV_MODEL, state, questions });
@@ -170,10 +191,15 @@ export type GenerateObjectFn = (options: {
   usage?: { inputTokens?: number; outputTokens?: number };
 }>;
 
+/**
+ * LLM 側の指示文。現在の状態の扱いは CURRENT_STATE_NOTE を jev 側の問い文と共有する。
+ * 同じ課題を同じ言葉で与えないと、判定の差に指示文の差が混ざる。
+ */
 export function llmInstruction(): string {
   const lines = AXES.map((axis) => `- ${axis}（${AXIS_JA[axis]}）`).join('\n');
   return [
     'user の発言を読み、それを受けてあなた自身の感情が各軸でどう動くかを答えてください。',
+    CURRENT_STATE_NOTE,
     '値は -1.0 から 1.0 の範囲で、上がるなら正、下がるなら負、変化がなければ 0 とします。',
     '答えるのは過去の観察ではなく、この発言に対するあなた自身の反応です。',
     '',
@@ -192,10 +218,12 @@ export async function judgeWithLlm(
   generateObjectFn: GenerateObjectFn,
   model: string = DEFAULT_LLM_MODEL,
 ): Promise<JudgeOutcome> {
+  // jev 側の state と同じ形・同じ丸めで渡す。両者の状態が一致している間は、
+  // 入力の JSON も一字一句同じになる。
   const prompt = [
     llmInstruction(),
     '',
-    JSON.stringify({ user: turn.user }, null, 2),
+    JSON.stringify(buildJudgeInput(turn), null, 2),
   ].join('\n');
 
   const started = performance.now();

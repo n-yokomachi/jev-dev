@@ -123,7 +123,12 @@ async function handleJudge(
     model = body.model;
   }
 
-  const turn: TurnInput = { user };
+  // 判定の直前に、その側の現在の感情状態を読む。affectus の agent は毎ターン
+  // 自分の状態を読んでから感情の動きを申告するので、入力にも現在値が要る。
+  // 読むのは判定の直前でなければならない。読み出し時に減衰が適用されるため、
+  // 古い値を使うと実際に適用される状態とずれる。
+  const currentAxes = await deps.readAffectus(side);
+  const turn: TurnInput = { user, axes: currentAxes };
   const outcome = side === 'jev'
     ? await deps.judgeJev(turn)
     : await deps.judgeLlm(turn, model);

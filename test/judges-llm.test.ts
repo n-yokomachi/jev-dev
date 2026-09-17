@@ -1,9 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { judgeWithLlm, llmInstruction } from '../src/judges.ts';
-import { AXES } from '../src/constants.ts';
+import { buildJevQuestions, judgeWithLlm, llmInstruction } from '../src/judges.ts';
+import { AXES, CURRENT_STATE_NOTE, type AxisMap } from '../src/constants.ts';
 
-const turn = { user: 'だいたい君は強引だ' };
+function axesOf(overrides: Partial<AxisMap> = {}): AxisMap {
+  const axes = {} as AxisMap;
+  for (const axis of AXES) axes[axis] = 0;
+  return { ...axes, ...overrides };
+}
+
+const turn = { user: 'だいたい君は強引だ', axes: axesOf({ anger: 0.9123456789, joy: 0.2 }) };
 
 function fakeObject(): Record<string, number> {
   const o: Record<string, number> = {};
@@ -22,16 +28,40 @@ test('llmInstruction は過去の観察ではなく自分の反応を求める',
   assert.match(llmInstruction(), /あなた自身/);
 });
 
-test('LLM に渡す prompt は user の発言だけを含む', async () => {
+test('現在の状態の扱いは jev の問い文と同じ文言で説明する', () => {
+  // 片方だけ現在値の説明が付くと、判定の差に指示文の差が混ざる。
+  assert.ok(llmInstruction().includes(CURRENT_STATE_NOTE));
+  assert.ok(buildJevQuestions().joy.instructions.includes(CURRENT_STATE_NOTE));
+});
+
+test('LLM に渡す prompt は現在の8軸と user の発言を含む', async () => {
   let seen = '';
-  await judgeWithLlm({ user: 'だいたい君は強引だ' }, async (options) => {
+  await judgeWithLlm(turn, async (options) => {
     seen = options.prompt;
     return { object: fakeObject(), usage: { inputTokens: 0, outputTokens: 0 } };
   });
   assert.match(seen, /だいたい君は強引だ/);
-  // 記録された返答は入力に含めない。state の JSON は user の1項目だけになる。
   assert.match(seen, /"user":/);
+  // 現在値を落とすと、affectus の agent の課題を再現しない。
+  assert.match(seen, /"axes":/);
+  assert.match(seen, /"anger": 0\.91/);
+  // 記録された返答は入力に含めない。
   assert.doesNotMatch(seen, /"agent":/);
+});
+
+test('prompt の入力 JSON は jev の state と同じ形になる', async () => {
+  let seen = '';
+  await judgeWithLlm(turn, async (options) => {
+    seen = options.prompt;
+    return { object: fakeObject(), usage: { inputTokens: 0, outputTokens: 0 } };
+  });
+  // 両者の状態が一致している間は、渡る JSON も一字一句同じでなければならない。
+  const expected = JSON.stringify(
+    { axes: { ...axesOf({ joy: 0.2 }), anger: 0.91 }, user: 'だいたい君は強引だ' },
+    null,
+    2,
+  );
+  assert.ok(seen.includes(expected), `入力 JSON が一致しない:\n${seen}`);
 });
 
 test('LLM の出力をそのままデルタとして使う', async () => {

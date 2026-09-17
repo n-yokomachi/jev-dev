@@ -19,8 +19,10 @@ test('public/app.js の AXES は src/constants.ts と同じ並び', async () => 
   assert.deepEqual(axes, [...AXES]);
 });
 
-test('判定に送るのは user の発言だけ', async () => {
+test('ブラウザが送るのは user の発言だけ。現在の状態はサーバーが直前に読む', async () => {
   const source = await read('app.js');
+  // 状態をブラウザが持ち回ると、送信までの間に減衰した古い値を判定に渡すことになる。
+  // 判定の入力に入る現在の8軸は、サーバーが判定の直前に自分で読む。
   assert.match(source, /judge\(side, \{ user: turn\.user \}\)/);
   // 記録された返答は入力にも画面にも使わない。
   assert.doesNotMatch(source, /turn\.agent/);

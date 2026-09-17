@@ -263,8 +263,8 @@ async function runTurnInner(turn) {
   }
 
   const results = {};
-  // 両側とも入力は user の発言だけ。状態が分岐するのは判定が違うからであって、
-  // 入力が違うからではない。
+  // 送るのは user の発言だけ。判定の入力に入る現在の8軸は、サーバーが判定の直前に
+  // その側の状態から読む。ブラウザが持ち回ると、送信までの間に減衰した古い値を渡すことになる。
   const both = ['llm', 'jev'].map(async (side) => {
     let result;
     try {

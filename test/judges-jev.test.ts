@@ -1,9 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildJevQuestions, costUsd, judgeWithJev, type EvaluationResult } from '../src/judges.ts';
-import { AXES } from '../src/constants.ts';
+import { AXES, CURRENT_STATE_NOTE, type AxisMap } from '../src/constants.ts';
 
-const turn = { user: 'だいたい君は強引だ' };
+/** 判定の入力に渡す現在の感情状態。実際の affectus と同じく長い float を含める。 */
+function axesOf(overrides: Partial<AxisMap> = {}): AxisMap {
+  const axes = {} as AxisMap;
+  for (const axis of AXES) axes[axis] = 0;
+  return { ...axes, ...overrides };
+}
+
+const turn = { user: 'だいたい君は強引だ', axes: axesOf({ anger: 0.9123456789, joy: 0.2 }) };
 
 function fakeResult(overrides: Record<string, unknown> = {}): EvaluationResult {
   const answers: Record<string, unknown> = {};
@@ -30,14 +37,45 @@ test('問いは過去の観察ではなく自分の反応を尋ねる', () => {
   assert.doesNotMatch(questions.joy.instructions, /agent/);
 });
 
-test('jev に渡す state は user の発言だけ', async () => {
+test('問い文は現在の状態の扱いを LLM 側と同じ文言で説明する', () => {
+  const questions = buildJevQuestions();
+  // 片方だけ現在値の説明が付くと、判定の差に指示文の差が混ざる。
+  for (const axis of AXES) {
+    assert.ok(
+      questions[axis].instructions.includes(CURRENT_STATE_NOTE),
+      `${axis} の問い文に現在の状態の説明が無い`,
+    );
+  }
+});
+
+test('jev に渡す state は現在の8軸と user の発言', async () => {
   let seen: unknown;
   await judgeWithJev(turn, async (options) => {
     seen = options.state;
     return fakeResult();
   });
-  // 記録された返答を混ぜると、状態の分岐が判定の差だけに由来すると言えなくなる。
-  assert.deepEqual(seen, { user: 'だいたい君は強引だ' });
+  // 現在値を落とすと、affectus の agent が毎ターン行っている
+  // 「自分の状態を読んでから動きを申告する」という課題を再現しない。
+  // 記録された返答は混ぜない。
+  assert.deepEqual(seen, {
+    axes: { ...axesOf({ joy: 0.2 }), anger: 0.91 },
+    user: 'だいたい君は強引だ',
+  });
+  // 軸は固定の順序で並ぶ。順序が揺れると入力が両者で食い違う。
+  assert.deepEqual(Object.keys((seen as { axes: AxisMap }).axes), [...AXES]);
+});
+
+test('state の軸は小数2桁に丸める', async () => {
+  let seen: { axes: AxisMap } | undefined;
+  await judgeWithJev(
+    { user: 'u', axes: axesOf({ acceptance: 0.9660641141415135 }) },
+    async (options) => {
+      seen = options.state as { axes: AxisMap };
+      return fakeResult();
+    },
+  );
+  // 下の桁は判定に効かず、入力のノイズになるだけ。
+  assert.equal(seen?.axes.acceptance, 0.97);
 });
 
 test('score 2 は delta 0 になる', async () => {

@@ -107,9 +107,11 @@ test('user が無い POST は 400 を返す', async () => {
   shutdown(server);
 });
 
-test('判定は user だけで通る。agent は要らない', async () => {
+test('判定の入力は user の発言と、直前に読んだその側の現在の8軸', async () => {
   let seen: unknown;
+  const current = { ...zeroAxes(), anger: 0.9 };
   const server = createServer(deps({
+    readAffectus: async (side) => (side === 'jev' ? current : zeroAxes()),
     judgeJev: async (turn) => {
       seen = turn;
       return {
@@ -125,7 +127,33 @@ test('判定は user だけで通る。agent は要らない', async () => {
     body: JSON.stringify({ user: 'u' }),
   });
   assert.equal(res.status, 200);
-  assert.deepEqual(seen, { user: 'u' });
+  // 記録された返答（agent）は要らない。現在値は各側が自分のものを読む。
+  assert.deepEqual(seen, { user: 'u', axes: current });
+  shutdown(server);
+});
+
+test('現在の状態は判定より前に読む。読み出し時に減衰が適用されるため', async () => {
+  const order: string[] = [];
+  const server = createServer(deps({
+    readAffectus: async (side) => { order.push(`read:${side}`); return zeroAxes(); },
+    judgeLlm: async () => {
+      order.push('judge');
+      return {
+        model: 'anthropic/claude-haiku-4.5', provider: 'anthropic', deltas: zeroAxes(),
+        confidence: {}, rawScore: {}, latencyMs: 1,
+        usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0,
+      };
+    },
+    applyToAffectus: async () => { order.push('apply'); return zeroAxes(); },
+  }));
+  const base = await listen(server);
+  await fetch(`${base}/api/judge/llm`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u' }),
+  });
+  // 読むのは自分の側だけ。相手の状態には触らない。
+  assert.deepEqual(order, ['read:llm', 'judge', 'apply']);
   shutdown(server);
 });
 

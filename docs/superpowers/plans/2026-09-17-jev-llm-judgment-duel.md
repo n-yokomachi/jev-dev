@@ -2318,13 +2318,16 @@ Expected: `.env.local` と `state/` が共に「入っていない」と出る�
 これが可搬性の実証なので、必ず実行する。
 
 ```bash
-Z=$(ls -t "$PWD"/dist/*.zip | head -1)
+ROOT="$PWD"
+Z=$(ls -t "$ROOT"/dist/*.zip | head -1)
 NAME=$(basename "$Z" .zip)
-KEY_SRC="$PWD/.env.local"
+KEY_SRC="$ROOT/.env.local"
 TMP=$(mktemp -d)
 cd "$TMP" && unzip -q "$Z" && cd "$NAME"
 ./scripts/setup.sh
 ```
+
+`ROOT` はこの後の後片付けでも使うので、同じシェルのまま Step 4 を通して実行すること。
 
 Expected: `node_modules あり、飛ばします` と `bin/affectus あり、飛ばします` が出て、`state/jev.json` と `state/llm.json` が作られ、`.env.local` が無いので鍵の書き方を案内して終了する。
 

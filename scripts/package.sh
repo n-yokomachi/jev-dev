@@ -46,16 +46,33 @@ else
   cp bin/affectus "$STAGE/bin/affectus"
 fi
 
-# 2. 中身を集める
-for item in src public scripts test docs package.json package-lock.json README.md CLAUDE.md HANDOFF.html EXPLAINER.html; do
+# 2. 中身を集める。dist（自分の出力）以外は全部入れる。
+#    隠しファイルも拾うので .gitignore / .git / .superpowers もここで入る。
+for item in "$ROOT"/* "$ROOT"/.[!.]*; do
+  base="$(basename "$item")"
+  case "$base" in
+    # 自分自身の出力。入れると zip の中に zip が入って際限なく膨らむ。
+    dist) continue ;;
+    # 手順1が universal binary を置いた後。ここで上書きすると、
+    # 手元のアーキテクチャ専用に退化して Intel Mac で動かなくなる。
+    bin) continue ;;
+    # 既定では入れない。--with-key のときだけ手順4で積む。
+    .env|.env.local) continue ;;
+  esac
   cp -R "$item" "$STAGE/"
 done
-cp -R node_modules "$STAGE/node_modules"
 
-# 3. 入ってはいけないものを落とす
-#    probe-jev.ts は動作確認用の使い捨てで、実行すると無条件に Gateway を叩く。
-rm -f "$STAGE/.env" "$STAGE/.env.local" "$STAGE/scripts/probe-jev.ts"
-rm -rf "$STAGE/state" "$STAGE/dist" "$STAGE/node_modules/.cache"
+# 3. 実行に邪魔なものだけ落とす
+#    state は同梱するが、こちらの手元で育った値をそのまま渡すと、
+#    受け取った側の輪が最初から埋まっていて比較の出発点にならない。
+#    ファイルは残したうえで、初期値に作り直す。
+rm -rf "$STAGE/node_modules/.cache"
+rm -f "$STAGE/state/jev.json" "$STAGE/state/llm.json" \
+      "$STAGE/state/jev.json.lock" "$STAGE/state/llm.json.lock"
+(cd "$STAGE" && ./bin/affectus --config state/config.yaml --state state/jev.json \
+   init --model plutchik --force >/dev/null)
+(cd "$STAGE" && ./bin/affectus --config state/config.yaml --state state/llm.json \
+   init --model plutchik --force >/dev/null)
 
 # 4. 要求されたときだけ API キーを積む。上の掃除の後に置くこと。
 #    先に置くと rm に消される。

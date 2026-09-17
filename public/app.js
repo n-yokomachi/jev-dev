@@ -112,6 +112,22 @@ function redrawTracks() {
   }
 }
 
+/** 生成された返答を出す。判定とは別の数字として、生成のレイテンシも並べる。 */
+function renderReply(side, outcome) {
+  el(`${side}-gen-ms`).innerHTML = `${outcome.latencyMs.toLocaleString()}<span>ms</span>`;
+  const box = el(`${side}-reply`);
+  box.classList.remove('empty', 'failed');
+  box.textContent = outcome.reply;
+}
+
+/** 生成の失敗はパネルに出す。出さないと、生成待ちのまま止まったのと区別が付かない。 */
+function showReplyFailure(side, message) {
+  const box = el(`${side}-reply`);
+  box.classList.remove('empty');
+  box.classList.add('failed');
+  box.textContent = `生成に失敗しました: ${message}`;
+}
+
 /** ターンごとの表示だけを消す。輪は affectus の蓄積状態なので残す。 */
 function clearSide(side) {
   state.latency[side] = null;
@@ -120,6 +136,11 @@ function clearSide(side) {
   el(`${side}-tok`).textContent = '— tok';
   el(`${side}-cost`).textContent = '—';
   el(`${side}-gauges`).innerHTML = '';
+  el(`${side}-gen-ms`).innerHTML = '—<span>ms</span>';
+  const reply = el(`${side}-reply`);
+  reply.classList.remove('failed');
+  reply.classList.add('empty');
+  reply.textContent = '—';
   redrawTracks();
 }
 
@@ -163,6 +184,20 @@ async function drawStateWheels(gen = generation) {
  */
 const JUDGE_TIMEOUT_MS = 60_000;
 
+/**
+ * 生成1本を待つ上限。判定と同じ理由で置く。
+ * 生成は判定のあとに走るので、上限が無ければ state.busy が生成で立ち続ける。
+ */
+const REPLY_TIMEOUT_MS = 60_000;
+
+/** タイムアウトの message は "signal timed out" で、そのままでは何が起きたか伝わらない。 */
+function describeFailure(error, limitMs) {
+  if (error.name === 'TimeoutError') {
+    return new Error(`${limitMs / 1000}秒待っても応答がありません`);
+  }
+  return error;
+}
+
 async function judge(side, turn) {
   // 選択肢の取得に失敗していれば model を送らず、サーバーの既定に任せる。
   // 空文字を送るとサーバーが未知のモデルとして 400 で弾く。
@@ -178,11 +213,26 @@ async function judge(side, turn) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
-    // 打ち切りの message は "signal timed out" で、そのまま画面に出しても何が起きたか伝わらない。
-    if (error.name === 'TimeoutError') {
-      throw new Error(`${JUDGE_TIMEOUT_MS / 1000}秒待っても応答がありません`);
-    }
-    throw error;
+    throw describeFailure(error, JUDGE_TIMEOUT_MS);
+  }
+}
+
+/**
+ * 判定を適用したあとの感情状態で返答を生成する。
+ * 判定が返ってから呼ぶ別フェーズであり、判定のレイテンシには入らない。
+ */
+async function requestReply(user, axes) {
+  try {
+    const res = await fetch('/api/reply', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ user, axes }),
+      signal: AbortSignal.timeout(REPLY_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    throw describeFailure(error, REPLY_TIMEOUT_MS);
   }
 }
 
@@ -206,12 +256,6 @@ async function runTurnInner(turn) {
   const gen = ++generation;
   clearNotice();
   el('turn-user').textContent = turn.user;
-  el('turn-agent').textContent = turn.agent;
-  el('self-report').textContent = turn.deltas
-    ? `agent の自己申告（記録時）：${Object.entries(turn.deltas)
-        .map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`)
-        .join(' / ')}`
-    : 'agent の自己申告（記録時）：—';
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
     el(`panel-${side}`).classList.add('pending');
@@ -219,26 +263,42 @@ async function runTurnInner(turn) {
   }
 
   const results = {};
-  const both = ['llm', 'jev'].map((side) =>
-    judge(side, { user: turn.user, agent: turn.agent })
-      .then((result) => {
-        if (gen !== generation) return; // 古いターンの結果は捨てる
-        results[side] = result;
-        renderSide(side, result);
-      })
-      .catch((error) => {
-        if (gen !== generation) return;
-        el(`panel-${side}`).classList.remove('pending');
-        el(`${side}-model`).textContent = `error: ${error.message}`;
-        // 数値はターン開始時に消してあるので、失敗しても前ターンの値は残らない
-      }),
-  );
+  // 両側とも入力は user の発言だけ。状態が分岐するのは判定が違うからであって、
+  // 入力が違うからではない。
+  const both = ['llm', 'jev'].map(async (side) => {
+    let result;
+    try {
+      result = await judge(side, { user: turn.user });
+    } catch (error) {
+      if (gen !== generation) return;
+      el(`panel-${side}`).classList.remove('pending');
+      el(`${side}-model`).textContent = `error: ${error.message}`;
+      // 数値はターン開始時に消してあるので、失敗しても前ターンの値は残らない
+      return;
+    }
+    if (gen !== generation) return; // 古いターンの結果は捨てる
+    results[side] = result;
+    renderSide(side, result);
+    // ずれは判定が出揃った時点で出す。生成の完了まで待たせると、
+    // 判定の比較が生成の分だけ遅れて出ることになる。
+    if (results.llm && results.jev) {
+      el('l1').textContent = l1(results.llm.deltas, results.jev.deltas).toFixed(2);
+    }
 
+    // 判定を適用したあとの感情状態で返答を作る。ここから先は別フェーズ。
+    try {
+      const outcome = await requestReply(turn.user, result.axes);
+      if (gen !== generation) return;
+      renderReply(side, outcome);
+    } catch (error) {
+      if (gen !== generation) return;
+      showReplyFailure(side, error.message);
+    }
+  });
+
+  // 生成まで含めて待つ。待たないと state.busy が判定だけで解除され、
+  // 生成の最中に次のターンが始まる。
   await Promise.allSettled(both);
-  if (gen !== generation) return;
-  if (results.llm && results.jev) {
-    el('l1').textContent = l1(results.llm.deltas, results.jev.deltas).toFixed(2);
-  }
 }
 
 function updateProgress() {
@@ -279,8 +339,6 @@ async function loadScenario(id) {
   // 会話文も消す。残すと前シナリオの発言が新シナリオの表示として残る。
   generation += 1;
   el('turn-user').textContent = '—';
-  el('turn-agent').textContent = '—';
-  el('self-report').textContent = 'agent の自己申告（記録時）：—';
   el('l1').textContent = '—';
   for (const side of ['llm', 'jev']) {
     // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
@@ -407,13 +465,12 @@ el('manual').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (state.busy) return;
   const user = el('manual-user').value.trim();
-  const agent = el('manual-agent').value.trim();
-  // 空のまま送ると、中身の無いターンで課金される判定を2本叩くことになる。
-  if (user === '' && agent === '') {
-    showError('user か agent のどちらかを入力してください');
+  // 空のまま送ると、中身の無い発言で課金される判定を2本叩くことになる。
+  if (user === '') {
+    showError('user の発言を入力してください');
     return;
   }
-  await runTurn({ user, agent, deltas: null });
+  await runTurn({ user });
 });
 
 // 状態を取りに行くまでの間だけゼロの輪を出す。すぐ実際の値で描き直す。

@@ -23,6 +23,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* 窓が狭いと reset まで入り切らず、画面ごと横に溢れる。行を折り返して収める。 */
+  flex-wrap: wrap;
   gap: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -33,6 +35,7 @@ body {
 
 .topbar select,
 .topbar button {
+  max-width: 100%;
   background: transparent;
   color: var(--text);
   border: 1px solid var(--line);
@@ -61,10 +64,18 @@ body {
 
 .panel {
   flex: 1;
+  /* flex の既定は min-width:auto で、長い返答が桁を押し広げて3カラムを崩す。 */
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px;
+}
+
+/* 窓が狭いときは横に並べない。3カラムのままだと返答が読める幅を切る。 */
+@media (max-width: 900px) {
+  .cols { flex-direction: column; }
+  .panel.mid { order: -1; }
 }
 
 .panel.mid { flex: 1.1; display: flex; flex-direction: column; }
@@ -101,10 +112,37 @@ body {
 
 .wheel { display: flex; justify-content: center; margin-bottom: 10px; }
 
+.lb {
+  display: block;
+  text-align: center;
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+
+.gen-lb { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+
 .ms { font-size: 22px; text-align: center; margin-bottom: 4px; }
 .ms span { font-size: 11px; color: var(--dim); margin-left: 4px; }
+.ms.gen { font-size: 16px; margin-bottom: 6px; }
 .llm .ms { color: var(--llm); }
 .jev .ms { color: var(--jev); }
+
+.reply {
+  margin: 0;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  line-height: 1.7;
+  /* 生成文はこのパネルで一番長い。折り返しと縦スクロールで囲いの中に収める。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 14em;
+  overflow-y: auto;
+}
+
+.reply.empty { color: var(--dim); text-align: center; }
+.reply.failed { color: var(--llm); text-align: left; }
 
 .track {
   height: 6px;

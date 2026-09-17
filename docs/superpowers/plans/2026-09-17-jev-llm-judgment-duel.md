@@ -475,7 +475,7 @@ node --env-file=.env.local src/server.ts
 ## テスト
 
 ```bash
-node --test test/
+node --test test/*.test.ts
 ```
 
 ## 配布 zip を作る
@@ -512,7 +512,7 @@ node --env-file=.env.local src/server.ts
 ## 構成の要点
 
 - **ビルド工程は無い。** Node 24 が `.ts` の型注釈を実行時に除去する。TypeScript コンパイラや `tsconfig.json` を足さないこと
-- テストは `node:test`。`node --test test/` で全件。テストフレームワークを足さないこと
+- テストは `node:test`。`node --test test/*.test.ts` で全件。テストフレームワークを足さないこと
 - 依存は `ai` と `zod` だけ。UI はフレームワーク無しの静的ファイル。バンドラを入れないこと
 - `bin/affectus` は外部プロセスとして呼ぶ。グローバルフラグはサブコマンドの**前**（`affectus --config P --state P feel '<json>'`）
 - 感情の軸は常にこの8つ、この順序: `joy, acceptance, fear, surprise, sorrow, disgust, anger, expectancy`
@@ -528,7 +528,7 @@ node --env-file=.env.local src/server.ts
 
 - [ ] **Step 9: 全テストを実行**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.ts`
 Expected: PASS（7件。Task 1 の4件と Task 1b の3件）
 
 - [ ] **Step 10: commit**
@@ -1636,7 +1636,7 @@ Expected: PASS（7件）
 
 - [ ] **Step 5: 全テストをまとめて実行**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.ts`
 Expected: PASS（41件）
 
 - [ ] **Step 6: commit**
@@ -2215,7 +2215,7 @@ node --env-file=.env.local src/server.ts
 
 - [ ] **Step 5: 全テストを実行**
 
-Run: `node --test test/`
+Run: `node --test test/*.test.ts`
 Expected: PASS（41件）
 
 - [ ] **Step 6: commit**

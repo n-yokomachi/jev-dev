@@ -14,30 +14,73 @@ const WHEEL_COLORS = {
   expectancy: '#fb8c00',
 };
 
-const SIZE = 132;
+// 花弁の色と並びだけでは、どの色がどの感情かが読めない。軸名は
+// src/constants.ts の AXIS_JA と同じ表記にする。ずれると画面と指示文が食い違う。
+const WHEEL_LABELS = {
+  joy: '喜び',
+  acceptance: '受容',
+  fear: '恐れ',
+  surprise: '驚き',
+  sorrow: '悲しみ',
+  disgust: '嫌悪',
+  anger: '怒り',
+  expectancy: '期待',
+};
+
+// 軸名を円の外に置くぶん、描画箱は正方形ではなく横長にする。
+// 左右の軸名は水平に伸びるので、必要な余白が上下より大きい。
+const BOX_W = 208;
+const BOX_H = 164;
+const CX = BOX_W / 2;
+const CY = BOX_H / 2;
+const RING = 52; // 目安の円（値 1.0）の半径
+const LABEL_R = RING + 11; // 軸名を置く半径。円と重ならない位置
+
+/** 軸 i の中心角。0時を joy として時計回りに45度ずつ。 */
+function axisAngle(i) {
+  return ((-90 + i * 45) * Math.PI) / 180;
+}
+
+/**
+ * 軸名の揃え方。真上と真下は中央揃え、右半分は左揃え、左半分は右揃え。
+ * すべて中央揃えにすると、左右の軸名が円に食い込む。
+ */
+function labelAnchor(i) {
+  if (i === 0 || i === 4) return 'middle';
+  return i < 4 ? 'start' : 'end';
+}
 
 export function drawWheel(container, values) {
-  const c = SIZE / 2;
-  const max = c - 8;
   const parts = [
-    `<svg width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">`,
-    `<circle cx="${c}" cy="${c}" r="${max}" fill="none" stroke="#1d2530"/>`,
+    `<svg width="${BOX_W}" height="${BOX_H}" viewBox="0 0 ${BOX_W} ${BOX_H}">`,
+    `<circle cx="${CX}" cy="${CY}" r="${RING}" fill="none" stroke="#1d2530"/>`,
   ];
 
   AXES.forEach((axis, i) => {
     const v = Math.min(1, Math.max(0, values[axis] ?? 0));
-    // 中心の最小半径 7 から、値 1.0 でちょうど目安の円（半径 max）に届く。
-    // 7 + max * v にすると 1.0 で円を 7px はみ出し、円が「満杯」を意味しなくなる。
-    const r = 7 + (max - 7) * v;
-    const a1 = ((-90 + i * 45 - 21) * Math.PI) / 180;
-    const a2 = ((-90 + i * 45 + 21) * Math.PI) / 180;
-    const x1 = (c + r * Math.cos(a1)).toFixed(1);
-    const y1 = (c + r * Math.sin(a1)).toFixed(1);
-    const x2 = (c + r * Math.cos(a2)).toFixed(1);
-    const y2 = (c + r * Math.sin(a2)).toFixed(1);
+    // 中心の最小半径 7 から、値 1.0 でちょうど目安の円（半径 RING）に届く。
+    // 7 + RING * v にすると 1.0 で円を 7px はみ出し、円が「満杯」を意味しなくなる。
+    const r = 7 + (RING - 7) * v;
+    const a1 = axisAngle(i) - (21 * Math.PI) / 180;
+    const a2 = axisAngle(i) + (21 * Math.PI) / 180;
+    const x1 = (CX + r * Math.cos(a1)).toFixed(1);
+    const y1 = (CY + r * Math.sin(a1)).toFixed(1);
+    const x2 = (CX + r * Math.cos(a2)).toFixed(1);
+    const y2 = (CY + r * Math.sin(a2)).toFixed(1);
     parts.push(
-      `<path d="M${c},${c} L${x1},${y1} A${r.toFixed(1)},${r.toFixed(1)} 0 0,1 ${x2},${y2} Z" ` +
+      `<path d="M${CX},${CY} L${x1},${y1} A${r.toFixed(1)},${r.toFixed(1)} 0 0,1 ${x2},${y2} Z" ` +
         `fill="${WHEEL_COLORS[axis]}" fill-opacity="${(0.2 + 0.75 * v).toFixed(2)}"/>`,
+    );
+  });
+
+  // 軸名は花弁の上に重ねない。花弁を描き切ってから、円の外側に置く。
+  AXES.forEach((axis, i) => {
+    const a = axisAngle(i);
+    const x = (CX + LABEL_R * Math.cos(a)).toFixed(1);
+    const y = (CY + LABEL_R * Math.sin(a)).toFixed(1);
+    parts.push(
+      `<text x="${x}" y="${y}" class="wl" text-anchor="${labelAnchor(i)}" ` +
+        `dominant-baseline="middle" fill="${WHEEL_COLORS[axis]}">${WHEEL_LABELS[axis]}</text>`,
     );
   });
 
@@ -118,8 +161,10 @@ function renderDuel(llmDeltas, jevDeltas) {
     return '<div class="row">' +
       `<span class="cell llm${tone(l)}">${signed(l)}</span>` +
       `<span class="cell bar llm${tone(l)}">${barOf(l)}</span>` +
-      `<span class="nm">${axis}</span>` +
-      `<span class="d">${diff}</span>` +
+      // 軸名とその軸の差を、左右の棒に挟まれた中央で上下に重ねる。
+      // 横に並べると、名前を読んでから差まで目を動かすことになる。
+      `<span class="mid"><span class="nm">${WHEEL_LABELS[axis]}</span>` +
+      `<span class="d">${diff}</span></span>` +
       `<span class="cell bar jev${tone(j)}">${barOf(j)}</span>` +
       `<span class="cell jev${tone(j)}">${signed(j)}</span>` +
       '</div>';
@@ -132,7 +177,6 @@ function renderDuel(llmDeltas, jevDeltas) {
  */
 function clearDuel() {
   renderDuel(undefined, undefined);
-  el('l1').textContent = '—';
 }
 
 function renderSide(side, result) {
@@ -205,10 +249,6 @@ function clearSide(side) {
   reply.classList.add('empty');
   reply.textContent = '—';
   redrawTracks();
-}
-
-function l1(a, b) {
-  return AXES.reduce((sum, axis) => sum + Math.abs((a?.[axis] ?? 0) - (b?.[axis] ?? 0)), 0);
 }
 
 /** 輪に渡せる形か。null も配列も軸の値として読めない。 */
@@ -351,11 +391,6 @@ async function runTurnInner(turn) {
     // 片側が返った時点からその半分を描く。両方揃うまで待つと、
     // どちらが先に返ったかが中央から読めなくなる。
     renderDuel(results.llm?.deltas, results.jev?.deltas);
-    // ずれは判定が出揃った時点で出す。生成の完了まで待たせると、
-    // 判定の比較が生成の分だけ遅れて出ることになる。
-    if (results.llm && results.jev) {
-      el('l1').textContent = l1(results.llm.deltas, results.jev.deltas).toFixed(2);
-    }
 
     // 判定を適用したあとの感情状態で返答を作る。ここから先は別フェーズ。
     try {

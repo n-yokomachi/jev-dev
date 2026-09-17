@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { AXES, PERSONA_IDS, PERSONAS } from '../src/constants.ts';
+import { AXES, AXIS_JA, PERSONA_IDS, PERSONAS } from '../src/constants.ts';
 
 /**
  * public/ はブラウザ向けで Node からは import できない。
@@ -17,6 +17,33 @@ test('public/app.js の AXES は src/constants.ts と同じ並び', async () => 
   assert.ok(match, 'app.js に AXES のリテラルが見つからない');
   const axes = [...match[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
   assert.deepEqual(axes, [...AXES]);
+});
+
+test('感情の輪は軸名を円状に添える。表記は src/constants.ts の AXIS_JA と一致', async () => {
+  const source = await read('app.js');
+  const match = source.match(/const WHEEL_LABELS = \{([\s\S]*?)\};/);
+  assert.ok(match, 'WHEEL_LABELS の定義が見つからない');
+  const labels = Object.fromEntries(
+    [...match[1].matchAll(/([a-z]+): '([^']+)'/g)].map((m) => [m[1], m[2]]),
+  );
+  // 画面の表記と指示文の表記がずれると、同じ軸が別の名前で2か所に出る。
+  assert.deepEqual(labels, Object.fromEntries(AXES.map((a) => [a, AXIS_JA[a]])));
+
+  const draw = source.match(/export function drawWheel\(container, values\) \{[\s\S]*?\n\}\n/);
+  assert.ok(draw, 'drawWheel の定義が見つからない');
+  assert.match(draw[0], /<text x="\$\{x\}" y="\$\{y\}"/);
+  // 色と名前を同じ図で読ませる。名前だけ灰色にすると対応が付かない。
+  // 花弁と軸名で2回、同じ色を引く。
+  assert.equal(
+    (draw[0].match(/fill="\$\{WHEEL_COLORS\[axis\]\}"/g) ?? []).length,
+    2,
+    '花弁と軸名が同じ色を引いていない',
+  );
+  // 花弁を描き切ってから名前を置く。逆にすると名前が花弁の下に潜る。
+  assert.ok(
+    draw[0].indexOf('<path') < draw[0].indexOf('<text'),
+    '軸名が花弁より先に描かれている',
+  );
 });
 
 test('ブラウザが送るのは user の発言だけ。現在の状態はサーバーが直前に読む', async () => {
@@ -54,10 +81,10 @@ test('index.html から記録された返答と自己申告が消えている', 
   assert.doesNotMatch(html, /manual-agent/);
 });
 
-test('ずれの見出しは「L1 距離」と書かない', async () => {
+test('見出しに「L1 距離」と書かない', async () => {
   const html = await read('index.html');
+  // 説明が要る見出しは見出しとして失敗している。
   assert.doesNotMatch(html, /L1/);
-  assert.match(html, /判定のずれ/);
 });
 
 test('返答の枠は溢れずに収まる', async () => {
@@ -181,16 +208,33 @@ test('確信度は画面に出さない', async () => {
   assert.doesNotMatch(html, /点線/);
 });
 
-test('軸名と差は行の中央、左右の棒に挟まれた位置に置く', async () => {
+test('軸名と差は行の中央で上下に重ね、左右の棒に挟む', async () => {
   const source = await read('app.js');
   const render = source.match(/function renderDuel\([\s\S]*?\n\}\n/);
   assert.ok(render, 'renderDuel の定義が見つからない');
   const rows = render[0];
   const llmBar = rows.indexOf('bar llm');
   const jevBar = rows.indexOf('bar jev');
-  assert.ok(llmBar < rows.indexOf('class="nm"'), '軸名が LLM の棒より外にある');
-  assert.ok(rows.indexOf('class="nm"') < jevBar, '軸名が jev の棒より外にある');
-  assert.ok(rows.indexOf('class="d"') < jevBar, '差が jev の棒より外にある');
+  // 軸名と差は1つの入れ物にまとめ、その入れ物ごと左右の棒に挟まれた位置に置く。
+  const mid = rows.indexOf('class="mid"');
+  assert.ok(mid > 0, '軸名と差をまとめる入れ物が無い');
+  assert.ok(llmBar < mid, '中央の欄が LLM の棒より外にある');
+  assert.ok(mid < jevBar, '中央の欄が jev の棒より外にある');
+  // 名前が上、差が下。
+  assert.ok(rows.indexOf('class="nm"') < rows.indexOf('class="d"'), '差が名前より上にある');
+
+  const css = await read('style.css');
+  // 横並びに戻ると、名前を読んでから差まで目を横に動かすことになる。
+  assert.match(css, /\.duel \.mid \{[^}]*flex-direction: column/s);
+  assert.match(css, /\.duel \.mid \{[^}]*align-items: center/s);
+});
+
+test('対比の軸名は日本語。輪の軸名と同じ表記を使う', async () => {
+  const source = await read('app.js');
+  const render = source.match(/function renderDuel\([\s\S]*?\n\}\n/);
+  assert.ok(render, 'renderDuel の定義が見つからない');
+  // 同じ軸が輪では「喜び」、対比では joy と出ると、同じものだと読めない。
+  assert.match(render[0], /WHEEL_LABELS\[axis\]/);
 });
 
 test('差は符号付きの値どうしで取る', async () => {
@@ -203,10 +247,15 @@ test('差は符号付きの値どうしで取る', async () => {
   assert.doesNotMatch(render[0], /Math\.abs\(l\) - Math\.abs\(j\)/);
 });
 
-test('合計は対比の行の下に残る', async () => {
+test('8軸の差の合計は出さない', async () => {
   const html = await read('index.html');
-  assert.match(html, /判定のずれ（8軸の差の合計）/);
-  assert.ok(html.indexOf('id="duel"') < html.indexOf('id="l1"'), '合計が行より上にある');
+  const source = await read('app.js');
+  const css = await read('style.css');
+  // ずれは軸ごとに読む。1つに畳んだ数値は、どの軸で割れたのかを消してしまう。
+  assert.doesNotMatch(html, /id="l1"/);
+  assert.doesNotMatch(html, /8軸の差の合計/);
+  assert.doesNotMatch(source, /function l1\(|el\('l1'\)/);
+  assert.doesNotMatch(css, /\.diverge/);
 });
 
 test('失敗・失効したターンは対比の行を消す', async () => {
@@ -214,7 +263,6 @@ test('失敗・失効したターンは対比の行を消す', async () => {
   const clear = source.match(/function clearDuel\(\) \{[\s\S]*?\n\}\n/);
   assert.ok(clear, 'clearDuel の定義が見つからない');
   assert.match(clear[0], /renderDuel\(undefined, undefined\)/);
-  assert.match(clear[0], /el\('l1'\)\.textContent = '—'/);
   // 前ターンの棒が新しい発言の隣に残らないよう、ターンの頭で消す。
   const inner = source.match(/async function runTurnInner\(turn\) \{[\s\S]*?\n\}\n/);
   assert.ok(inner, 'runTurnInner の定義が見つからない');

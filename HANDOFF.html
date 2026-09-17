@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jev-dev affectus — 引き継ぎ資料</title>
+<style>
+  /*
+   * この資料は zip に同梱され、受け取った側がダブルクリックで開く。
+   * 外部のフォントもスクリプトも読まない。ネットワークが無くても読めること。
+   */
+  :root {
+    --ground: #f2f3f5;
+    --panel: #ffffff;
+    --line: #d9dde2;
+    --line-soft: #e8ebef;
+    --ink: #161b21;
+    --ink-soft: #5c6773;
+    --llm: #b06a00;
+    --jev: #00795c;
+    --accent: #2f5d8a;
+    --warn: #a8500a;
+    --sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #07090c;
+      --panel: #0d1117;
+      --line: #1d2530;
+      --line-soft: #151c25;
+      --ink: #c9d4e0;
+      --ink-soft: #77828f;
+      --llm: #ffb84d;
+      --jev: #4dffb8;
+      --accent: #7fb2e5;
+      --warn: #ffb04d;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.85;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.4rem, 4vw, 1.9rem);
+    font-weight: 500;
+    line-height: 1.35;
+    margin: 0 0 12px;
+  }
+
+  h2 {
+    font-size: 1.12rem;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  h3 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 22px 0 6px;
+  }
+
+  .lede { color: var(--ink-soft); margin: 0; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  section > p { margin: 0 0 14px; }
+  section > p:last-child { margin-bottom: 0; }
+
+  .rule { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+  ul, ol { margin: 0 0 14px; padding-left: 1.4em; }
+  li { margin-bottom: 5px; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--line-soft);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.75;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--accent);
+    padding: 14px 16px;
+    margin: 12px 0 0;
+    overflow-x: auto;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  pre .c { color: var(--ink-soft); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 14px;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  th {
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    border-bottom-color: var(--line);
+  }
+  td code { white-space: nowrap; }
+  .tw { overflow-x: auto; }
+
+  /* 手順 */
+  .steps { display: flex; flex-direction: column; gap: 20px; margin-top: 20px; }
+  .step { display: grid; grid-template-columns: 2rem 1fr; gap: 14px; align-items: start; }
+  .num {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    padding-top: 3px;
+  }
+  .step h3 { margin: 0 0 3px; }
+  .step p { margin: 0; color: var(--ink-soft); font-size: 0.92rem; }
+  .step pre { margin-top: 10px; }
+
+  /* 注意書き */
+  .note {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--accent);
+    padding: 16px 18px;
+    margin-top: 16px;
+  }
+  .note.warn { border-left-color: var(--warn); }
+  .note p { margin: 0 0 10px; font-size: 0.92rem; }
+  .note p:last-child { margin-bottom: 0; }
+  .note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .note.warn .tag { color: var(--warn); }
+
+  /* 左右 */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .side {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top-width: 2px;
+    padding: 12px 14px;
+  }
+  .side.llm { border-top-color: var(--llm); }
+  .side.jev { border-top-color: var(--jev); }
+  .side .who {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    display: block;
+    margin-bottom: 5px;
+  }
+  .side.llm .who { color: var(--llm); }
+  .side.jev .who { color: var(--jev); }
+  .side p { margin: 0; font-size: 0.86rem; line-height: 1.7; color: var(--ink-soft); }
+
+  dl { margin: 14px 0 0; }
+  dt { font-weight: 700; font-size: 0.93rem; margin-top: 16px; }
+  dt:first-child { margin-top: 0; }
+  dd { margin: 3px 0 0; color: var(--ink-soft); font-size: 0.91rem; }
+
+  @media (max-width: 560px) {
+    .split { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 1.5rem 1fr; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">handoff</span>
+    <h1>jev-dev affectus</h1>
+    <p class="lede">
+      この zip だけで動きます。必要なのは macOS と Node 24 以上だけで、
+      Go のビルドも <code>npm install</code> も要りません。まず「3ステップで起動」まで進んでください。
+    </p>
+  </header>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">これは何</span>
+    <h2>同じ発言を2つの判定器に判定させて、並べて見るデモ</h2>
+    <p>
+      ひとつの発言に対して、<strong>TypeSafe の jev</strong> と <strong>LLM（Claude Haiku 4.5）</strong>が
+      それぞれ「エージェントの感情が8軸どう動くか」を判定します。その判定を
+      <a href="https://github.com/n-yokomachi/affectus">affectus</a>（感情状態エンジン）に別々に積み、
+      分岐した状態それぞれで返答を生成します。
+    </p>
+    <p>
+      見たいのは2つ。<strong>判定がどれだけ食い違うか</strong>と、<strong>どちらがどれだけ速いか</strong>です。
+      さらに、判定の差が返答の口調の差として現れます。
+    </p>
+
+    <div class="split">
+      <div class="side llm">
+        <span class="who">LLM</span>
+        <p>構造化出力で8軸の数値を一度に返す。文章も書ける普通のモデル。実測 1.1 秒前後。</p>
+      </div>
+      <div class="side jev">
+        <span class="who">jev</span>
+        <p>8問を1リクエストで並列に。型付きの値と確率分布だけを返し、文章は一切生成しない。実測 0.7 秒前後。</p>
+      </div>
+    </div>
+
+    <p style="margin-top:16px">
+      同梱の <code>docs/</code> に設計書と実装計画が入っています。背景まで知りたいときはそちらを。
+    </p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">必要なもの</span>
+    <h2>Node 24 以上だけ</h2>
+
+    <div class="tw">
+      <table>
+        <tr><th>もの</th><th>要る？</th><th>なぜ</th></tr>
+        <tr>
+          <td><strong>macOS</strong></td>
+          <td>必須</td>
+          <td>affectus がファイルロックに <code>syscall.Flock</code> を使うため、Windows では動きません</td>
+        </tr>
+        <tr>
+          <td><strong>Node 24 以上</strong></td>
+          <td>必須</td>
+          <td><code>.ts</code> の型注釈を Node 自身が実行時に外します。ビルド工程がありません</td>
+        </tr>
+        <tr>
+          <td>Go</td>
+          <td>不要</td>
+          <td><code>bin/affectus</code> をビルド済みで同梱（x86_64 + arm64 の universal binary）</td>
+        </tr>
+        <tr>
+          <td>ネットワーク越しの依存解決</td>
+          <td>不要</td>
+          <td><code>node_modules/</code> を同梱済み</td>
+        </tr>
+        <tr>
+          <td><strong>Vercel AI Gateway の API キー</strong></td>
+          <td>必須</td>
+          <td>下の注意書きを参照。zip によっては同梱済みです</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="margin-top:18px">Node のバージョンはこれで確かめられます。</p>
+    <pre><code>node -v</code></pre>
+    <p style="margin-top:10px">
+      24 未満、またはそもそも入っていない場合は <a href="https://nodejs.org/">nodejs.org</a> から入れてください。
+      <code>setup.sh</code> も冒頭で検査して、足りなければそこで止まります。
+    </p>
+
+    <div class="note">
+      <span class="tag">API キーについて</span>
+      <p>
+        zip のファイル名に <code>-withkey</code> が付いていれば <code>.env.local</code> が同梱されていて、
+        <strong>キーの用意は要りません。</strong><code>setup.sh</code> もキー入力を飛ばします。
+      </p>
+      <p>
+        付いていなければ自分のキーが要ります。<a href="https://vercel.com/">Vercel</a> のダッシュボードで
+        AI Gateway のキーを発行し、<code>setup.sh</code> が最後に出す案内のとおりに <code>.env.local</code> へ書いてください。
+        キーの値をターミナルの履歴に残さない書き方を案内します。
+      </p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">起動</span>
+    <h2>3ステップ</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <div>
+          <h3>展開して、そのディレクトリに入る</h3>
+          <p>Finder でダブルクリックして展開したあと、ターミナルでその中へ移動します。</p>
+          <pre><code>cd ~/Downloads/jev-duel-<span class="c">&lt;日付&gt;</span></code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">02</div>
+        <div>
+          <h3>セットアップ</h3>
+          <p>
+            何度実行しても同じ結果になります。Node の検査、affectus の確認、感情状態の初期化までを行い、
+            キーが無ければ最後に書き方を案内します。
+          </p>
+          <pre><code>bash scripts/setup.sh</code></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">03</div>
+        <div>
+          <h3>起動して、ブラウザで開く</h3>
+          <p>
+            <code>http://localhost:8787</code> が開きます。8787 が埋まっていれば
+            <code>PORT=9000</code> のように前置きして変えられます。起動時に実際の URL が出ます。
+          </p>
+          <pre><code>node --env-file=.env.local src/server.ts</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:20px">止めるときはターミナルで <code>Ctrl+C</code>。</p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">使い方</span>
+    <h2>書いて、送る。それだけ</h2>
+    <p>
+      中央のテキスト欄に user としての発言を書いて<strong>「メッセージを送信」</strong>を押します。
+      <strong>API を叩くのはこのボタンだけ</strong>で、自動で送信される経路はありません。
+    </p>
+    <p>
+      会話を重ねるには、同じ欄に次の発言を書いて送り直します。感情状態は送信のたびに両側へ積まれていきます。
+      比較をやり直すときは右上の <code>reset</code> で両方を初期値に戻します。
+    </p>
+
+    <h3>画面の読み方</h3>
+    <dl>
+      <dt>左が LLM、右が jev</dt>
+      <dd>同じ発言を同時に判定させ、先に返ったほうから埋まります。</dd>
+
+      <dt>プルチックの輪</dt>
+      <dd>
+        affectus に積み上がった現在の感情状態。花弁の長さが各軸の強さで、円に届けば 1.0。
+        円の外に同じ色で軸名が添えてあります。左右で形が違えば、判定が食い違ってきた証拠です。
+      </dd>
+
+      <dt>中央の対比</dt>
+      <dd>
+        軸ごとに1行。<strong>中央が 0、左右の末端が 1.0</strong> で、左が LLM、右が jev。
+        棒の長さがその軸をどれだけ動かしたかです。軸名とその軸の差は、左右の棒に挟まれた中央に上下に重ねてあります。
+      </dd>
+
+      <dt>符号は色</dt>
+      <dd>
+        正はその側の色、負はくすんだ灰。<strong>長さが同じで色が違えば、両者は正反対の判断をしています。</strong>
+        長さだけ見ていると「片方が大きく動いた」としか読めない場面です。
+      </dd>
+
+      <dt>判定 / 生成の ms</dt>
+      <dd>
+        上が判定、下がそのあとに走る返答生成。生成は両側とも同じ Haiku 4.5 なので、
+        <strong>速度差として読むのは判定のほう</strong>です。
+      </dd>
+
+      <dt>人格（画面上部）</dt>
+      <dd>
+        返答を生成する話し手の性格。<code>friendly</code>（明るく協力的）と <code>contrarian</code>（天邪鬼）があり、
+        <strong>両側とも同じ人格を使います。</strong>判定には人格を渡しません。
+      </dd>
+
+      <dt>判定の入出力（JSON）</dt>
+      <dd>
+        パネルの一番下に常に出ています。そのターンでモデルに渡した内容と返ってきた内容がそのまま読めます。
+        返答生成の入出力は出しません。
+      </dd>
+    </dl>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">お金</span>
+    <h2>1ターンあたり約 $0.0035</h2>
+    <p>送信1回で4回のモデル呼び出しが走ります。実測値です。</p>
+
+    <div class="tw">
+      <table>
+        <tr><th>呼び出し</th><th>回数</th><th>実測コスト</th><th>実測レイテンシ</th></tr>
+        <tr><td>jev 判定</td><td>1</td><td>$0.000082</td><td>693 ms</td></tr>
+        <tr><td>LLM 判定</td><td>1</td><td>$0.001067</td><td>1,113 ms</td></tr>
+        <tr><td>返答生成</td><td>2</td><td>$0.001182 × 2</td><td>1,500〜2,600 ms</td></tr>
+        <tr><td><strong>合計</strong></td><td></td><td><strong>約 $0.0035</strong></td><td></td></tr>
+      </table>
+    </div>
+
+    <p style="margin-top:16px">
+      ざっくり<strong>300ターンで $1</strong> ほど。ボタンを押したときしか走らないので、
+      開いたまま放置しても課金されません。
+    </p>
+    <p>
+      判定だけを見ると <strong>jev は LLM の約 13分の1 のコスト</strong>で、しかも速い。
+      これがこのデモで一番見たかった数字です。
+    </p>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">困ったとき</span>
+    <h2>詰まりやすいところ</h2>
+
+    <dl>
+      <dt>「開発元を検証できないため開けません」と出る</dt>
+      <dd>
+        ネット越しに受け取ったファイルに macOS が付ける隔離属性です。<code>setup.sh</code> が
+        自動で外しますが、手で外すなら展開先のディレクトリで
+        <code>xattr -dr com.apple.quarantine .</code> を実行してください。
+      </dd>
+
+      <dt>ポート 8787 が埋まっている</dt>
+      <dd>
+        <code>PORT=9000 node --env-file=.env.local src/server.ts</code> のように変えられます。
+        起動時に実際の URL が出ます。
+      </dd>
+
+      <dt>起動はするが判定が失敗する</dt>
+      <dd>
+        画面の上部にエラーが出ます。多くはキーの問題です。<code>.env.local</code> に
+        <code>AI_GATEWAY_API_KEY=</code> の行があるか、値が空でないかを確かめてください。
+        Vercel 側で支払い方法が未登録だと 403 が返ります。
+      </dd>
+
+      <dt>Node のバージョンが古いと言われる</dt>
+      <dd>
+        24 未満では <code>.ts</code> をそのまま実行できません。<code>node -v</code> で確認して入れ直してください。
+        <code>nvm</code> を使っているなら <code>nvm use 24</code> を忘れずに。
+      </dd>
+
+      <dt>輪が両側とも動かない / 変な値が積まれた</dt>
+      <dd>
+        画面右上の <code>reset</code> で両方の感情状態を初期値に戻せます。
+        状態の実体は <code>state/jev.json</code> と <code>state/llm.json</code> です。
+      </dd>
+
+      <dt>Windows で動かしたい</dt>
+      <dd>
+        できません。affectus がファイルロックに <code>syscall.Flock</code>（Unix 専用）を使っており、
+        コンパイルの時点で通りません。
+      </dd>
+    </dl>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">中身</span>
+    <h2>どこに何があるか</h2>
+
+    <div class="tw">
+      <table>
+        <tr><th>場所</th><th>中身</th></tr>
+        <tr><td><code>src/server.ts</code></td><td>HTTP サーバー。フレームワークなし、<code>node:http</code> だけ</td></tr>
+        <tr><td><code>src/judges.ts</code></td><td>jev / LLM それぞれの判定呼び出し</td></tr>
+        <tr><td><code>src/affectus.ts</code></td><td>affectus バイナリを子プロセスとして呼ぶラッパー</td></tr>
+        <tr><td><code>src/reply.ts</code></td><td>感情状態で色づけた返答の生成</td></tr>
+        <tr><td><code>src/constants.ts</code></td><td><strong>問いの文・軸定義・単価・変換係数・人格。</strong>挙動を変えたいときはまずここ</td></tr>
+        <tr><td><code>public/</code></td><td>画面。フレームワークなしの静的ファイル3つ</td></tr>
+        <tr><td><code>bin/affectus</code></td><td>affectus 本体（universal binary）</td></tr>
+        <tr><td><code>state/</code></td><td>2つの感情状態。<code>setup.sh</code> が生成し、実行のたびに育つ</td></tr>
+        <tr><td><code>docs/superpowers/</code></td><td>設計書と実装計画</td></tr>
+        <tr><td><code>test/</code></td><td>テスト。<code>npm test</code> で全件</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">触るなら</span>
+    <h2>知っておくと事故らないこと</h2>
+    <ul>
+      <li>
+        <strong>ビルド工程はありません。</strong>Node 24 が <code>.ts</code> の型注釈を実行時に外します。
+        TypeScript コンパイラや <code>tsconfig.json</code> を足さないでください
+      </li>
+      <li>
+        <strong>テストは <code>node:test</code>。</strong><code>npm test</code> で全件走ります。
+        テストフレームワークを足さないでください
+      </li>
+      <li>
+        <strong>依存は <code>ai</code> と <code>zod</code> だけ。</strong>UI はフレームワークなし。バンドラも入れないでください
+      </li>
+      <li>
+        <strong>感情の軸は常にこの8つ、この順序。</strong>
+        <code>joy, acceptance, fear, surprise, sorrow, disgust, anger, expectancy</code>
+      </li>
+      <li>
+        <strong>LLM 側の配信元は <code>anthropic</code> に固定してあります。</strong>
+        レイテンシ比較の条件を揃えるためなので外さないでください
+      </li>
+      <li>
+        affectus のグローバルフラグはサブコマンドの<strong>前</strong>に置きます
+        （<code>affectus --config P --state P feel '&lt;json&gt;'</code>）
+      </li>
+    </ul>
+
+    <div class="note warn">
+      <span class="tag">API キーの扱い</span>
+      <p>
+        キーの値を<strong>コード・コミット・ログ・標準出力のいずれにも出さないでください。</strong>
+        <code>.env.local</code> は <code>.gitignore</code> 済みです。
+      </p>
+      <p>
+        この zip にキーが同梱されている場合、<strong>この zip を持っている人は誰でもそのキーで課金できます。</strong>
+        取り扱いに注意し、漏れた疑いがあれば Vercel のダッシュボードでキーをローテートしてください。
+      </p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <span class="eyebrow">リンク</span>
+    <h2>関連</h2>
+    <ul>
+      <li><a href="https://github.com/n-yokomachi/jev-dev">jev-dev</a> — このプロジェクト本体</li>
+      <li><a href="https://github.com/n-yokomachi/affectus">affectus</a> — 感情状態エンジン</li>
+      <li><a href="https://typesafe.ai/">TypeSafe AI</a> — jev の提供元</li>
+      <li><a href="https://vercel.com/ai-gateway/models/jev">Vercel AI Gateway — jev</a> — 経由している API</li>
+      <li><code>README.md</code> — 同梱。より短い技術メモ</li>
+      <li><code>CLAUDE.md</code> — 同梱。コードを触るエージェント向けの文脈</li>
+    </ul>
+  </section>
+
+</div>
+</body>
+</html>

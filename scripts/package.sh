@@ -47,7 +47,7 @@ else
 fi
 
 # 2. 中身を集める
-for item in src public scripts test docs package.json package-lock.json README.md CLAUDE.md; do
+for item in src public scripts test docs package.json package-lock.json README.md CLAUDE.md HANDOFF.html; do
   cp -R "$item" "$STAGE/"
 done
 cp -R node_modules "$STAGE/node_modules"

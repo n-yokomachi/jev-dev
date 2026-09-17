@@ -72,21 +72,70 @@ function clearNotice() {
   el('notice').hidden = true;
 }
 
-function renderGauges(container, deltas, confidence) {
-  container.innerHTML = AXES.map((axis) => {
-    const v = deltas?.[axis] ?? 0;
-    const width = Math.abs(v) * 50;
-    const bar = v >= 0
-      ? `<b style="left:50%;width:${width}%"></b>`
-      : `<b style="right:50%;width:${width}%"></b>`;
-    const conf = confidence?.[axis] !== undefined
-      ? `<span class="conf" style="left:${50 + (v >= 0 ? 1 : -1) * confidence[axis] * 50}%"></span>`
-      : '';
-    const sign = v > 0 ? '+' : '';
-    return `<div class="axis"><span class="nm">${axis.slice(0, 7)}</span>` +
-      `<span class="gauge">${bar}${conf}</span>` +
-      `<span class="val">${sign}${v.toFixed(2)}</span></div>`;
+/**
+ * 軸の値として読めるものだけを返す。欠落を 0 と混同すると、
+ * まだ返っていない軸が「変化なし」という判定として読めてしまう。
+ */
+function axisValue(deltas, axis) {
+  const v = deltas?.[axis];
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
+/** 符号付きの小数2桁。棒の長さは絶対値なので、向きは色とこの符号が持つ。 */
+function signed(v) {
+  return v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}`;
+}
+
+/** 正はその側の色、負はくすんだ灰。どちらも付かないのは、まだ返っていない軸。 */
+function tone(v) {
+  if (v === undefined) return '';
+  return v < 0 ? ' neg' : ' pos';
+}
+
+/** 棒の長さは変動の大きさ。レンジ外の値が来ても枠から出さない。 */
+function barOf(v) {
+  return v === undefined ? '' : `<i style="width:${Math.min(1, Math.abs(v)) * 100}%"></i>`;
+}
+
+/**
+ * 判定の対比。軸ごとに1行で、中央が 0、左右の末端が 1.0。左半分が LLM の変動値、
+ * 右半分が jev の変動値で、棒の長さがその軸をどれだけ動かしたか。中央にその軸の差を出す。
+ * 合計値ひとつでは、どの軸で割れたのかが分からないため。
+ *
+ * 符号は色で表す。長さだけで向きを表さないのは、LLM が −0.5 で jev が +0.5 のときに
+ * 左右が同じ形に見えてしまうため。この画面はまさにその食い違いを出すためにある。
+ *
+ * 確信度は出さない。jev が返すのは score と probabilities だけで、「確信度」は
+ * こちらの算出値になる。モデルが言ったかのように見せることになるため置かない。
+ *
+ * 片側だけ返っている間はその半分だけ描く。両方揃うまで空にすると、
+ * どちらが先に返ったかが中央から読めなくなる。
+ */
+function renderDuel(llmDeltas, jevDeltas) {
+  el('duel').innerHTML = AXES.map((axis) => {
+    const l = axisValue(llmDeltas, axis);
+    const j = axisValue(jevDeltas, axis);
+    // 差は符号付きの値どうしで取る。棒の長さ（絶対値）の差にすると、
+    // LLM が −0.5 で jev が +0.5 のときに 0.00 となり、正反対の判断を見逃す。
+    const diff = l === undefined || j === undefined ? '—' : Math.abs(l - j).toFixed(2);
+    return '<div class="row">' +
+      `<span class="cell llm${tone(l)}">${signed(l)}</span>` +
+      `<span class="cell bar llm${tone(l)}">${barOf(l)}</span>` +
+      `<span class="nm">${axis}</span>` +
+      `<span class="d">${diff}</span>` +
+      `<span class="cell bar jev${tone(j)}">${barOf(j)}</span>` +
+      `<span class="cell jev${tone(j)}">${signed(j)}</span>` +
+      '</div>';
   }).join('');
+}
+
+/**
+ * 対比を空の8行に戻す。失効したターンや失敗したターンで、前ターンの棒が
+ * 新しい発言の隣に残らないようにする。行は残すので中央の丈は毎ターン変わらない。
+ */
+function clearDuel() {
+  renderDuel(undefined, undefined);
+  el('l1').textContent = '—';
 }
 
 function renderSide(side, result) {
@@ -99,7 +148,6 @@ function renderSide(side, result) {
   state.latency[side] = result.latencyMs;
   state.maxLatency = Math.max(state.maxLatency, result.latencyMs);
   redrawTracks();
-  renderGauges(el(`${side}-gauges`), result.deltas, result.confidence);
   renderRaw(side, result);
   drawWheel(el(`wheel-${side}`), result.axes);
 }
@@ -150,7 +198,6 @@ function clearSide(side) {
   el(`${side}-ms`).innerHTML = '—<span>ms</span>';
   el(`${side}-tok`).textContent = '— tok';
   el(`${side}-cost`).textContent = '—';
-  el(`${side}-gauges`).innerHTML = '';
   // 生の入出力も消す。残すと、失敗したターンで前ターンの JSON が
   // このターンの入出力として読める。開閉の状態は触らない。
   el(`${side}-raw-req`).textContent = '—';
@@ -280,7 +327,8 @@ async function runTurnInner(turn) {
   // 「変えるのは判定器だけ」という比較が崩れうる。
   const persona = el('persona').value;
   // 発言は入力欄の中身がそのまま入力になる。ここでは書き戻さない。
-  el('l1').textContent = '—';
+  // 対比は先に消す。残すと、新しい発言の隣に前ターンの棒が並ぶ。
+  clearDuel();
   for (const side of ['llm', 'jev']) {
     el(`panel-${side}`).classList.add('pending');
     clearSide(side);
@@ -303,6 +351,9 @@ async function runTurnInner(turn) {
     if (gen !== generation) return; // 古いターンの結果は捨てる
     results[side] = result;
     renderSide(side, result);
+    // 片側が返った時点からその半分を描く。両方揃うまで待つと、
+    // どちらが先に返ったかが中央から読めなくなる。
+    renderDuel(results.llm?.deltas, results.jev?.deltas);
     // ずれは判定が出揃った時点で出す。生成の完了まで待たせると、
     // 判定の比較が生成の分だけ遅れて出ることになる。
     if (results.llm && results.jev) {
@@ -392,7 +443,7 @@ async function loadScenario(id) {
   el('persona').value = personaForScenario(id);
   // 切替前のターンが飛行中なら、その結果は捨てる。
   generation += 1;
-  el('l1').textContent = '—';
+  clearDuel();
   for (const side of ['llm', 'jev']) {
     // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
     el(`panel-${side}`).classList.remove('pending');
@@ -480,6 +531,7 @@ el('reset').addEventListener('click', async () => {
       return;
     }
     state.maxLatency = 1;
+    clearDuel();
     for (const side of ['llm', 'jev']) {
       // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
       el(`panel-${side}`).classList.remove('pending');
@@ -531,6 +583,7 @@ el('compose').addEventListener('submit', async (event) => {
 const initial = Object.fromEntries(AXES.map((a) => [a, 0]));
 drawWheel(el('wheel-llm'), initial);
 drawWheel(el('wheel-jev'), initial);
+clearDuel();
 updateProgress();
 
 // 初期化の失敗は画面に出す。出さないと真っ白なまま理由が分からない。

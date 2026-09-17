@@ -102,10 +102,145 @@ test('送信ボタンの文言は「メッセージを送信」', async () => {
   assert.match(html, /id="send"[^>]*>メッセージを送信</);
 });
 
-test('軸ゲージの見出しは「◯◯ が返した感情の変動値」の形式', async () => {
+test('左右のパネルにゲージを置かない', async () => {
   const html = await read('index.html');
-  assert.match(html, /LLM が返した感情の変動値/);
-  assert.match(html, /jev が返した感情の変動値/);
+  // 判定の差は中央に集約した。左右に残すと、画面の端から端へ目を往復させることになる。
+  assert.doesNotMatch(html, /id="llm-gauges"/);
+  assert.doesNotMatch(html, /id="jev-gauges"/);
+  assert.doesNotMatch(html, /class="gauges"/);
+  assert.doesNotMatch(html, /が返した感情の変動値/);
+  const source = await read('app.js');
+  assert.doesNotMatch(source, /renderGauges/);
+});
+
+test('判定の対比は中央パネルに置く', async () => {
+  const html = await read('index.html');
+  const mid = html.slice(
+    html.indexOf('<section class="panel mid">'),
+    html.indexOf('id="panel-jev"'),
+  );
+  assert.match(mid, /id="duel"/);
+  // 見出しは左が LLM、中央が差、右が jev。
+  const head = mid.match(/<div class="duel-head">[\s\S]*?<\/div>/);
+  assert.ok(head, '対比の見出し行が無い');
+  assert.ok(head[0].indexOf('LLM') < head[0].indexOf('差'), '見出しの並びが LLM → 差 でない');
+  assert.ok(head[0].indexOf('差') < head[0].indexOf('jev'), '見出しの並びが 差 → jev でない');
+});
+
+test('対比は8軸ぶんを固定の順序で、軸名を略さずに出す', async () => {
+  const source = await read('app.js');
+  const render = source.match(/function renderDuel\([\s\S]*?\n\}\n/);
+  assert.ok(render, 'renderDuel の定義が見つからない');
+  assert.match(render[0], /AXES\.map/);
+  // 切り詰めると、どの軸で割れたのかが読めなくなる。
+  assert.doesNotMatch(render[0], /slice\(/);
+  const css = await read('style.css');
+  assert.match(css, /\.duel \.nm \{[^}]*white-space: nowrap/s);
+});
+
+test('見出し行と8行は同じ桁組みで並ぶ', async () => {
+  const css = await read('style.css');
+  // 縦にも読ませるので、列の定義は1か所。head と row で別々に書くとずれる。
+  assert.match(css, /\.duel \{[^}]*--cols:/s);
+  assert.match(css, /\.duel-head,\n\.duel \.row \{[^}]*grid-template-columns: var\(--cols\)/s);
+});
+
+test('中央が 0、左右の末端が 1.0。棒は中央から外へ伸びる', async () => {
+  const css = await read('style.css');
+  assert.match(css, /\.duel \.bar\.llm i \{ right: 0; \}/);
+  assert.match(css, /\.duel \.bar\.jev i \{ left: 0; \}/);
+  const source = await read('app.js');
+  // 棒の長さは変動の大きさ。その半分の全幅を 1.0 とする。
+  assert.match(source, /Math\.min\(1, Math\.abs\(v\)\) \* 100/);
+});
+
+test('符号は色で表す。正はその側の色、負はくすんだ灰', async () => {
+  const css = await read('style.css');
+  assert.match(css, /\.duel \.llm\.pos \{ color: var\(--llm\); \}/);
+  assert.match(css, /\.duel \.jev\.pos \{ color: var\(--jev\); \}/);
+  assert.match(css, /\.duel \.neg \{ color: var\(--dim\); \}/);
+  const source = await read('app.js');
+  const tone = source.match(/function tone\(v\) \{[\s\S]*?\n\}\n/);
+  assert.ok(tone, 'tone の定義が見つからない');
+  assert.match(tone[0], /' neg'/);
+  assert.match(tone[0], /' pos'/);
+  // 数値にも符号を付ける。長さだけでは LLM の −0.5 と jev の +0.5 が同じに見える。
+  const signed = source.match(/function signed\(v\) \{[\s\S]*?\n\}\n/);
+  assert.ok(signed, 'signed の定義が見つからない');
+  assert.match(signed[0], /'\+'/);
+});
+
+test('確信度は画面に出さない', async () => {
+  // jev が返すのは score と probabilities だけ。「確信度」はこちらの算出値であり、
+  // 点線で重ねると、モデルが言った値であるかのように見せることになる。
+  const css = await read('style.css');
+  assert.doesNotMatch(css, /\.conf\b/);
+  assert.doesNotMatch(css, /dotted #93a1b0/);
+  const source = await read('app.js');
+  assert.doesNotMatch(source, /confidence/);
+  const html = await read('index.html');
+  assert.doesNotMatch(html, /確信度/);
+  assert.doesNotMatch(html, /点線/);
+});
+
+test('軸名と差は行の中央、左右の棒に挟まれた位置に置く', async () => {
+  const source = await read('app.js');
+  const render = source.match(/function renderDuel\([\s\S]*?\n\}\n/);
+  assert.ok(render, 'renderDuel の定義が見つからない');
+  const rows = render[0];
+  const llmBar = rows.indexOf('bar llm');
+  const jevBar = rows.indexOf('bar jev');
+  assert.ok(llmBar < rows.indexOf('class="nm"'), '軸名が LLM の棒より外にある');
+  assert.ok(rows.indexOf('class="nm"') < jevBar, '軸名が jev の棒より外にある');
+  assert.ok(rows.indexOf('class="d"') < jevBar, '差が jev の棒より外にある');
+});
+
+test('差は符号付きの値どうしで取る', async () => {
+  const source = await read('app.js');
+  const render = source.match(/function renderDuel\([\s\S]*?\n\}\n/);
+  assert.ok(render, 'renderDuel の定義が見つからない');
+  // 棒の長さ（絶対値）どうしの差にすると、LLM が −0.5 で jev が +0.5 のときに
+  // 0.00 となり、この画面が最も見せたい正反対の判断を見逃す。
+  assert.match(render[0], /Math\.abs\(l - j\)/);
+  assert.doesNotMatch(render[0], /Math\.abs\(l\) - Math\.abs\(j\)/);
+});
+
+test('合計は対比の行の下に残る', async () => {
+  const html = await read('index.html');
+  assert.match(html, /判定のずれ（8軸の差の合計）/);
+  assert.ok(html.indexOf('id="duel"') < html.indexOf('id="l1"'), '合計が行より上にある');
+});
+
+test('失敗・失効したターンは対比の行を消す', async () => {
+  const source = await read('app.js');
+  const clear = source.match(/function clearDuel\(\) \{[\s\S]*?\n\}\n/);
+  assert.ok(clear, 'clearDuel の定義が見つからない');
+  assert.match(clear[0], /renderDuel\(undefined, undefined\)/);
+  assert.match(clear[0], /el\('l1'\)\.textContent = '—'/);
+  // 前ターンの棒が新しい発言の隣に残らないよう、ターンの頭で消す。
+  const inner = source.match(/async function runTurnInner\(turn\) \{[\s\S]*?\n\}\n/);
+  assert.ok(inner, 'runTurnInner の定義が見つからない');
+  assert.match(inner[0], /clearDuel\(\);/);
+  // シナリオ切替でも消す。切替前のターンが飛行中なら、その結果は捨てるため。
+  const loader = source.match(/async function loadScenario\(id\) \{[\s\S]*?\n\}\n/);
+  assert.ok(loader, 'loadScenario の定義が見つからない');
+  assert.match(loader[0], /clearDuel\(\);/);
+});
+
+test('対比は片側が返った時点から描く', async () => {
+  const source = await read('app.js');
+  const inner = source.match(/async function runTurnInner\(turn\) \{[\s\S]*?\n\}\n/);
+  assert.ok(inner, 'runTurnInner の定義が見つからない');
+  // 両方揃うまで待つと、どちらが先に返ったかが中央から読めなくなる。
+  assert.match(inner[0], /renderDuel\(results\.llm\?\.deltas, results\.jev\?\.deltas\)/);
+});
+
+test('中央カラムが一番広い', async () => {
+  const css = await read('style.css');
+  const mid = css.match(/\.panel\.mid \{[^}]*?flex: ([\d.]+)/);
+  assert.ok(mid, '.panel.mid の flex が読めない');
+  // 対比が起きるのは中央。左右は flex: 1。
+  assert.ok(Number(mid[1]) > 1, `中央が左右より広くない (flex: ${mid[1]})`);
 });
 
 test('両パネルの下部に判定の生の入出力を出す場所がある', async () => {

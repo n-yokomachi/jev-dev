@@ -83,7 +83,8 @@ body {
   .panel.mid { order: -1; }
 }
 
-.panel.mid { flex: 1.1; display: flex; flex-direction: column; }
+/* 対比は中央で起きるので、中央を一番広く取る。左右はゲージが抜けたぶん余裕がある。 */
+.panel.mid { flex: 1.5; display: flex; flex-direction: column; }
 .panel.llm { border-color: #4a3c22; }
 .panel.jev { border-color: #1f4a3a; }
 .panel.pending { opacity: .45; }
@@ -177,64 +178,82 @@ body {
   margin-bottom: 10px;
 }
 
-.axis {
+/*
+ * 判定の対比。軸ごとに1行を、中央を 0、左右の末端を 1.0 として左右に分ける。
+ * 左半分が LLM、右半分が jev。8行は同じ目盛りの1つのまとまりとして縦にも読ませるので、
+ * 見出し行と各行の桁組みを1か所で定義して、列がずれないようにする。
+ */
+.duel { --cols: 42px 1fr 74px 42px 1fr 42px; margin: auto 0; }
+
+.duel-head,
+.duel .row {
   display: grid;
-  grid-template-columns: 58px 1fr 38px;
+  grid-template-columns: var(--cols);
   gap: 6px;
   align-items: center;
-  font-size: 9px;
-  margin-bottom: 4px;
+  font-size: 10px;
 }
 
-.axis .nm { color: var(--dim); text-align: right; }
-.axis .val { color: var(--dim); }
+.duel-head { color: var(--dim); letter-spacing: .12em; margin-bottom: 5px; }
+.duel-head .llm { grid-column: 1 / 3; text-align: center; color: var(--llm); }
+.duel-head .d { grid-column: 4; text-align: center; }
+.duel-head .jev { grid-column: 5 / 7; text-align: center; color: var(--jev); }
 
-.gauge {
+.duel .row { margin-bottom: 4px; }
+/*
+ * 軸名と差は行の中央、左右の棒に挟まれた位置に置く。8つとも略さずに出す。
+ * 切り詰めると、どの軸で割れたのかが読めなくなる。
+ */
+.duel .nm { color: var(--dim); text-align: right; white-space: nowrap; }
+.duel .row .d { color: var(--text); text-align: right; }
+
+/*
+ * 符号は色が持つ。正はその側の色、負はくすんだ灰。棒の長さは変動の大きさなので、
+ * 色が無ければ LLM の −0.5 と jev の +0.5 が同じ形に見えてしまう。
+ * 色は数値にも棒にも効かせたいので、棒は currentColor で塗る。
+ */
+.duel .cell { color: var(--dim); }
+.duel .llm.pos { color: var(--llm); }
+.duel .jev.pos { color: var(--jev); }
+.duel .neg { color: var(--dim); }
+.duel .cell.llm { text-align: right; }
+.duel .cell.jev { text-align: left; }
+
+.duel .bar {
   position: relative;
   height: 9px;
   background: #131a22;
   border-radius: 2px;
 }
 
-.gauge::before {
+/* 0 の位置。左右の棒はどちらもここを起点に外へ伸びる。 */
+.duel .bar::before {
   content: "";
   position: absolute;
-  left: 50%;
-  top: -1px;
-  bottom: -1px;
+  top: -2px;
+  bottom: -2px;
   width: 1px;
-  background: var(--line);
+  background: var(--dim);
 }
 
-.gauge b {
+.duel .bar.llm::before { right: 0; }
+.duel .bar.jev::before { left: 0; }
+
+.duel .bar i {
   position: absolute;
   top: 1px;
   bottom: 1px;
   border-radius: 2px;
+  background: currentColor;
   transition: width .3s ease-out;
 }
 
-.llm .gauge b { background: var(--llm); }
-.jev .gauge b { background: var(--jev); }
-
-.gauge .conf {
-  position: absolute;
-  top: -2px;
-  bottom: -2px;
-  border-right: 2px dotted #93a1b0;
-}
-
-.ghost {
-  color: var(--dim);
-  font-size: 9px;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-  margin-top: 8px;
-}
+.duel .bar.llm i { right: 0; }
+.duel .bar.jev i { left: 0; }
 
 /*
  * 判定の生の入出力。畳まずに常に表示する。参照用なのでパネルの一番下、
- * 輪・ゲージ・レイテンシ・生成された返答より下に置き、それらを押しのけない。
+ * 輪・レイテンシ・生成された返答より下に置き、それらを押しのけない。
  */
 .raw { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
 .raw .raw-lb { text-align: center; }
@@ -261,8 +280,8 @@ body {
   overflow: auto;
 }
 
-/* 余った縦幅の中央に置く。上の入力欄と下端の間で行き場が無いため。 */
-.diverge { text-align: center; margin: auto 0; color: var(--dim); font-size: 10px; }
+/* 8行の要約なので、行の直下に置く。 */
+.diverge { text-align: center; margin: 14px 0 0; color: var(--dim); font-size: 10px; }
 .diverge b { display: block; color: var(--text); font-size: 20px; margin-top: 2px; }
 
 /*

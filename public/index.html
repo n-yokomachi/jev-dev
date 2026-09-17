@@ -37,9 +37,6 @@
     <div class="ms" id="llm-ms">—<span>ms</span></div>
     <div class="track"><i id="llm-track"></i></div>
     <div class="meta"><span id="llm-tok">— tok</span><span id="llm-cost">—</span></div>
-    <span class="lb">LLM が返した感情の変動値</span>
-    <div class="gauges" id="llm-gauges"></div>
-    <div class="ghost">確率分布を返さないため点線なし</div>
     <span class="lb gen-lb">生成</span>
     <div class="ms gen" id="llm-gen-ms">—<span>ms</span></div>
     <p class="reply empty" id="llm-reply">—</p>
@@ -59,7 +56,16 @@
         placeholder="ターンを送って読み込むか、ここに直接書く"></textarea>
       <button type="submit" id="send">メッセージを送信</button>
     </form>
-    <div class="diverge">判定のずれ（8軸の差の合計）<br><b id="l1">—</b></div>
+    <div class="duel">
+      <span class="lb">判定の対比（中央が 0、左右の末端が 1.0）</span>
+      <div class="duel-head">
+        <span class="llm">LLM</span>
+        <span class="d">差</span>
+        <span class="jev">jev</span>
+      </div>
+      <div class="duel-rows" id="duel"></div>
+      <div class="diverge">判定のずれ（8軸の差の合計）<br><b id="l1">—</b></div>
+    </div>
   </section>
 
   <section class="panel jev" id="panel-jev">
@@ -70,9 +76,6 @@
     <div class="ms" id="jev-ms">—<span>ms</span></div>
     <div class="track"><i id="jev-track"></i></div>
     <div class="meta"><span id="jev-tok">— tok</span><span id="jev-cost">—</span></div>
-    <span class="lb">jev が返した感情の変動値</span>
-    <div class="gauges" id="jev-gauges"></div>
-    <div class="ghost">点線 = 軸ごとの確率分布から算出した確信度</div>
     <span class="lb gen-lb">生成</span>
     <div class="ms gen" id="jev-gen-ms">—<span>ms</span></div>
     <p class="reply empty" id="jev-reply">—</p>

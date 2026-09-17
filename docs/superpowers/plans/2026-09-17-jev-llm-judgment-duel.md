@@ -397,8 +397,7 @@ fi
 if [ ! -f .env.local ]; then
   say ""
   say "最後に API キーが要ります。次を実行して、貼り付けてください。"
-  say "  read -rs \"KEY?AI_GATEWAY_API_KEY: \" && printf 'AI_GATEWAY_API_KEY=%s\\n' \"\$KEY\" > .env.local && unset KEY"
-  say "  chmod 600 .env.local"
+  say "  printf 'AI_GATEWAY_API_KEY: '; read -rs KEY; echo; printf 'AI_GATEWAY_API_KEY=%s\\n' \"\$KEY\" > .env.local; unset KEY; chmod 600 .env.local"
   say ""
   say "キーは Vercel の AI Gateway → API Keys で発行できます。"
   exit 0

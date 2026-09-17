@@ -227,6 +227,40 @@ body {
   margin-top: 8px;
 }
 
+/*
+ * 判定の生の入出力。参照用なのでパネルの一番下に置き、既定では畳んでおく。
+ * 開いたままだと jev 側の入力だけで8問ぶんの問い文が並び、輪もゲージも返答も
+ * 画面の外へ押し出す。
+ */
+.raw { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
+
+.raw summary {
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: .12em;
+  cursor: pointer;
+}
+
+.raw summary:hover { color: var(--text); }
+.raw .io-lb { text-align: left; margin: 8px 0 3px; }
+
+.io {
+  margin: 0;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 9px;
+  line-height: 1.5;
+  /* JSON は1行が長い。折り返さないとカラムを横に押し広げて3カラムが崩れる。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* 縦は自分の枠の中だけでスクロールさせる。パネルの丈は伸ばさない。 */
+  max-height: 16em;
+  overflow: auto;
+}
+
 /* 余った縦幅の中央に置く。上の入力欄と下端の間で行き場が無いため。 */
 .diverge { text-align: center; margin: auto 0; color: var(--dim); font-size: 10px; }
 .diverge b { display: block; color: var(--text); font-size: 20px; margin-top: 2px; }

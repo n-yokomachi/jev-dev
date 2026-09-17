@@ -39,6 +39,10 @@ export interface JudgeOutcome {
   latencyMs: number;
   usage: Usage;
   costUsd: number;
+  /** モデルに渡した内容。画面にそのまま出す。 */
+  request: unknown;
+  /** モデルから返ってきた内容。こちらの変換を掛ける前の姿。 */
+  response: unknown;
 }
 
 export interface EvaluationAnswer {
@@ -167,6 +171,11 @@ export async function judgeWithJev(
     latencyMs,
     usage,
     costUsd: costUsd(JEV_MODEL, usage),
+    // 画面に出す生の入出力。こちらが組み立てた引数と、モデルの回答だけを入れる。
+    // SDK の結果オブジェクトをまるごと入れない。実装によっては送信ヘッダや
+    // リクエストボディを提げており、そこに API キーが載りうるため。
+    request: { model: JEV_MODEL, state, questions },
+    response: { answers: result.answers },
   };
 }
 
@@ -225,13 +234,14 @@ export async function judgeWithLlm(
     '',
     JSON.stringify(buildJudgeInput(turn), null, 2),
   ].join('\n');
+  const providerOptions = { gateway: { only: [LLM_PROVIDER] } };
 
   const started = performance.now();
   const result = await generateObjectFn({
     model,
     schema: DeltaSchema,
     prompt,
-    providerOptions: { gateway: { only: [LLM_PROVIDER] } },
+    providerOptions,
   });
   const latencyMs = Math.round(performance.now() - started);
 
@@ -258,5 +268,10 @@ export async function judgeWithLlm(
     latencyMs,
     usage,
     costUsd: costUsd(model, usage),
+    // jev 側と同じ理由で、こちらが渡した引数とモデルの出力だけを入れる。
+    // schema は zod のオブジェクトで JSON にならないため入れない。
+    // response は clampDelta を掛ける前の、パースされたそのままの object。
+    request: { model, prompt, providerOptions },
+    response: { object: result.object },
   };
 }

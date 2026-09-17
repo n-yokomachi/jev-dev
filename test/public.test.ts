@@ -108,6 +108,61 @@ test('軸ゲージの見出しは「◯◯ が返した感情の変動値」の�
   assert.match(html, /jev が返した感情の変動値/);
 });
 
+test('両パネルの下部に判定の生の入出力を出す場所がある', async () => {
+  const html = await read('index.html');
+  for (const id of ['llm-raw-req', 'llm-raw-res', 'jev-raw-req', 'jev-raw-res']) {
+    assert.match(html, new RegExp(`id="${id}"`), `${id} が無い`);
+  }
+  // 参照用なのでパネルの一番下。返答より前に置くと、主役を押し下げる。
+  for (const side of ['llm', 'jev']) {
+    const panel = html.slice(html.indexOf(`id="panel-${side}"`));
+    assert.ok(
+      panel.indexOf(`id="${side}-reply"`) < panel.indexOf(`id="${side}-raw-req"`),
+      `${side}: 生の入出力が返答より上にある`,
+    );
+  }
+});
+
+test('生の入出力は既定で畳んである', async () => {
+  const html = await read('index.html');
+  // 開いたままだと jev 側の8問ぶんの問い文が輪・ゲージ・返答を画面外へ押し出す。
+  assert.equal((html.match(/<details class="raw">/g) ?? []).length, 2);
+  assert.doesNotMatch(html, /<details[^>]*\sopen/);
+});
+
+test('生の入出力の枠は溢れずに収まる', async () => {
+  const css = await read('style.css');
+  // JSON は1行が長い。折り返しと縦スクロールが無いと3カラムを崩す。
+  assert.match(css, /\.io \{[^}]*white-space: pre-wrap/s);
+  assert.match(css, /\.io \{[^}]*overflow-wrap: anywhere/s);
+  assert.match(css, /\.io \{[^}]*max-height:/s);
+  assert.match(css, /\.io \{[^}]*overflow: auto/s);
+});
+
+test('生表示に出すのは判定の入出力だけ。返答生成の入出力は出さない', async () => {
+  const source = await read('app.js');
+  assert.match(source, /function renderRaw\(side, result\)/);
+  assert.match(source, /result\.request/);
+  assert.match(source, /result\.response/);
+  // 判定の描画からだけ呼ぶ。
+  const renderSide = source.match(/function renderSide\(side, result\) \{[\s\S]*?\n\}\n/);
+  assert.ok(renderSide, 'renderSide の定義が見つからない');
+  assert.match(renderSide[0], /renderRaw\(side, result\)/);
+  // 生成の描画は触らない。
+  const renderReply = source.match(/function renderReply\(side, outcome\) \{[\s\S]*?\n\}\n/);
+  assert.ok(renderReply, 'renderReply の定義が見つからない');
+  assert.doesNotMatch(renderReply[0], /raw/);
+});
+
+test('ターンの開始で前ターンの生の入出力を消す', async () => {
+  const source = await read('app.js');
+  const clearSide = source.match(/function clearSide\(side\) \{[\s\S]*?\n\}\n/);
+  assert.ok(clearSide, 'clearSide の定義が見つからない');
+  // 残すと、失敗したターンで前ターンの JSON がこのターンの入出力として読める。
+  assert.match(clearSide[0], /raw-req/);
+  assert.match(clearSide[0], /raw-res/);
+});
+
 test('自動再生ボタンは自動で送信することが分かる表記になっている', async () => {
   const html = await read('index.html');
   assert.match(html, /id="play"[^>]*>[^<]*自動送信/);

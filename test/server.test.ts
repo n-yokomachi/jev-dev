@@ -17,15 +17,19 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
     defaultLlmModel: 'anthropic/claude-haiku-4.5',
     listScenarios: async () => [{ id: 'scenario-a', turnCount: 20 }],
     loadScenario: async (_dir, id) => ({ id, turns: [] }),
-    judgeJev: async () => ({
+    judgeJev: async (turn) => ({
       model: 'typesafe-ai/jev', provider: 'typesafe-ai', deltas: zeroAxes(), confidence: { joy: 0.9 },
       rawScore: { joy: 2 }, latencyMs: 238,
       usage: { inputTokens: 310, outputTokens: 24 }, costUsd: 0.000013,
+      request: { model: 'typesafe-ai/jev', state: turn, questions: {} },
+      response: { answers: { joy: { type: 'score', score: 2 } } },
     }),
-    judgeLlm: async () => ({
+    judgeLlm: async (turn) => ({
       model: 'anthropic/claude-haiku-4.5', provider: 'anthropic', deltas: zeroAxes(), confidence: {},
       rawScore: {}, latencyMs: 2140,
       usage: { inputTokens: 412, outputTokens: 96 }, costUsd: 0.00178,
+      request: { model: 'anthropic/claude-haiku-4.5', prompt: JSON.stringify(turn) },
+      response: { object: zeroAxes() },
     }),
     generateReply: async () => ({
       model: 'anthropic/claude-haiku-4.5', provider: 'anthropic',
@@ -117,6 +121,7 @@ test('判定の入力は user の発言と、直前に読んだその側の現�
       return {
         model: 'typesafe-ai/jev', provider: 'typesafe-ai', deltas: zeroAxes(), confidence: {},
         rawScore: {}, latencyMs: 1, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0,
+        request: {}, response: {},
       };
     },
   }));
@@ -141,7 +146,7 @@ test('現在の状態は判定より前に読む。読み出し時に減衰が�
       return {
         model: 'anthropic/claude-haiku-4.5', provider: 'anthropic', deltas: zeroAxes(),
         confidence: {}, rawScore: {}, latencyMs: 1,
-        usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0,
+        usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0, request: {}, response: {},
       };
     },
     applyToAffectus: async () => { order.push('apply'); return zeroAxes(); },
@@ -154,6 +159,24 @@ test('現在の状態は判定より前に読む。読み出し時に減衰が�
   });
   // 読むのは自分の側だけ。相手の状態には触らない。
   assert.deepEqual(order, ['read:llm', 'judge', 'apply']);
+  shutdown(server);
+});
+
+test('判定の応答は request と response をそのまま運ぶ', async () => {
+  const server = createServer(deps({
+    readAffectus: async () => ({ ...zeroAxes(), sorrow: 0.5 }),
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/judge/jev`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u' }),
+  });
+  const body = await res.json();
+  assert.equal(res.status, 200);
+  // 画面の生表示はこれを読む。渡した現在値が入っていること。
+  assert.equal(body.request.state.axes.sorrow, 0.5);
+  assert.equal(body.response.answers.joy.score, 2);
   shutdown(server);
 });
 
@@ -397,6 +420,7 @@ test('llmModels にあるモデルはそのまま判定に渡る', async () => {
       return {
         model: model ?? '', provider: 'anthropic', deltas: zeroAxes(), confidence: {},
         rawScore: {}, latencyMs: 1, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0,
+        request: {}, response: {},
       };
     },
   }));

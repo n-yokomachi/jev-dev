@@ -64,6 +64,25 @@ test('prompt の入力 JSON は jev の state と同じ形になる', async () =
   assert.ok(seen.includes(expected), `入力 JSON が一致しない:\n${seen}`);
 });
 
+test('request と response に生の入出力が載る', async () => {
+  const object = fakeObject();
+  object.anger = 5; // 丸められる前の値が response に残ることを見る
+  let prompt = '';
+  const out = await judgeWithLlm(turn, async (options) => {
+    prompt = options.prompt;
+    return { object, usage: { inputTokens: 0, outputTokens: 0 } };
+  });
+  const request = out.request as { model: string; prompt: string; providerOptions: unknown };
+  assert.equal(request.model, 'anthropic/claude-haiku-4.5');
+  // 画面に出るのは、実際にモデルが受け取った prompt そのもの。
+  assert.equal(request.prompt, prompt);
+  assert.deepEqual(request.providerOptions, { gateway: { only: ['anthropic'] } });
+  // 出力はパースされたそのままの object。clamp を掛ける前。
+  assert.deepEqual(out.response, { object });
+  assert.equal((out.response as { object: Record<string, number> }).object.anger, 5);
+  assert.equal(out.deltas.anger, 1);
+});
+
 test('LLM の出力をそのままデルタとして使う', async () => {
   const out = await judgeWithLlm(turn, async () => ({
     object: fakeObject(),

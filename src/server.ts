@@ -133,6 +133,7 @@ async function handleJudge(
     ? await deps.judgeJev(turn)
     : await deps.judgeLlm(turn, model);
   const axes = await deps.applyToAffectus(side, outcome.deltas);
+  // outcome には request / response が入っており、そのまま画面の生表示になる。
   sendJson(res, 200, { ...outcome, axes });
 }
 

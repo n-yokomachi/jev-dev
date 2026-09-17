@@ -78,6 +78,26 @@ test('state の軸は小数2桁に丸める', async () => {
   assert.equal(seen?.axes.acceptance, 0.97);
 });
 
+test('request と response に生の入出力が載る', async () => {
+  const result = fakeResult();
+  const out = await judgeWithJev(turn, async () => result);
+  const request = out.request as { model: string; state: unknown; questions: unknown };
+  assert.equal(request.model, 'typesafe-ai/jev');
+  // 渡した state がそのまま載る。画面に出るのはこれ。
+  assert.deepEqual(request.state, {
+    axes: { ...axesOf({ joy: 0.2 }), anger: 0.91 },
+    user: 'だいたい君は強引だ',
+  });
+  assert.deepEqual(request.questions, buildJevQuestions());
+  // 出力は変換前の回答。確率分布も落とさずに持つ。
+  assert.deepEqual(out.response, { answers: result.answers });
+  assert.deepEqual(
+    (out.response as { answers: Record<string, { probabilities?: unknown }> }).answers.sorrow
+      .probabilities,
+    { '0': 0, '1': 0, '2': 1, '3': 0, '4': 0 },
+  );
+});
+
 test('score 2 は delta 0 になる', async () => {
   const out = await judgeWithJev(turn, async () => fakeResult());
   for (const axis of AXES) assert.equal(out.deltas[axis], 0);

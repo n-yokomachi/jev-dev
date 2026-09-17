@@ -117,7 +117,7 @@ affectus が返す値は `0.9660641141415135` のような長い float で、下
 
 ```
 type: "score"
-instructions: "この発言を受けて、あなたの <軸名> はどう動くか"
+instructions: "<現在値の扱いを説明する共通の文言>\nこの発言を受けて、あなたの <軸名> はどう動くか"
 criteria: ["強く下がった", "下がった", "変化なし", "上がった", "強く上がった"]
 ```
 
@@ -232,8 +232,19 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
   latencyMs: number
   usage: { inputTokens: number; outputTokens: number }
   costUsd: number
+  request: unknown                   // モデルに渡した内容
+  response: unknown                  // 返ってきた内容（変換前）
 }
 ```
+
+`request` / `response` には、こちらが組み立てた引数とモデルの回答だけを入れる。SDK の結果
+オブジェクトをまるごと入れない。実装によっては送信ヘッダやリクエストボディを提げており、
+そこに API キーが載りうるため。
+
+| | `request` | `response` |
+|---|---|---|
+| jev | `{ model, state, questions }` | `{ answers }`（軸ごとの score と確率分布） |
+| LLM | `{ model, prompt, providerOptions }` | `{ object }`（パース済み・丸め前） |
 
 ## 計測と単価
 

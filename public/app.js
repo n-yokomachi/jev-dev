@@ -100,7 +100,22 @@ function renderSide(side, result) {
   state.maxLatency = Math.max(state.maxLatency, result.latencyMs);
   redrawTracks();
   renderGauges(el(`${side}-gauges`), result.deltas, result.confidence);
+  renderRaw(side, result);
   drawWheel(el(`wheel-${side}`), result.axes);
+}
+
+/** 応答に入っていなければ、空の JSON ではなく欠落と分かる表示にする。 */
+function formatJson(value) {
+  return value === undefined ? '—' : JSON.stringify(value, null, 2);
+}
+
+/**
+ * 判定の生の入出力。何を渡して何が返ったかを画面で確かめられるようにする。
+ * 対象は判定だけで、返答生成の入出力は出さない。
+ */
+function renderRaw(side, result) {
+  el(`${side}-raw-req`).textContent = formatJson(result.request);
+  el(`${side}-raw-res`).textContent = formatJson(result.response);
 }
 
 /** 両側のバーを現在の最大値で描き直す。片側だけ更新すると比率がずれる。 */
@@ -136,6 +151,10 @@ function clearSide(side) {
   el(`${side}-tok`).textContent = '— tok';
   el(`${side}-cost`).textContent = '—';
   el(`${side}-gauges`).innerHTML = '';
+  // 生の入出力も消す。残すと、失敗したターンで前ターンの JSON が
+  // このターンの入出力として読める。開閉の状態は触らない。
+  el(`${side}-raw-req`).textContent = '—';
+  el(`${side}-raw-res`).textContent = '—';
   el(`${side}-gen-ms`).innerHTML = '—<span>ms</span>';
   const reply = el(`${side}-reply`);
   reply.classList.remove('failed');

@@ -27,6 +27,8 @@ jev-dev/
 │   └── constants.ts      問い・軸定義・単価・変換係数
 ├── public/               index.html / app.js / style.css
 ├── data/transcripts/     取り込んだトランスクリプト 24 ファイル
+├── README.md             別マシンでの手順
+├── CLAUDE.md             配布先の Claude Code 向けの文脈
 ├── scripts/
 │   ├── setup.sh          別マシンでの初期設定
 │   └── package.sh        配布 zip の作成
@@ -128,6 +130,7 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
 | GET | `/` | UI |
 | GET | `/api/scenarios` | シナリオ一覧（ファイル名と総ターン数） |
 | GET | `/api/scenarios/:id` | 指定シナリオの全ターン |
+| GET | `/api/models` | LLM の選択肢と既定モデル |
 | POST | `/api/judge/jev` | `{user, agent}` を判定し affectus に適用 |
 | POST | `/api/judge/llm` | `{user, agent, model?}` を判定し affectus に適用 |
 | GET | `/api/state` | 両状態の現在値（読み出し時の減衰を反映） |
@@ -138,6 +141,7 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
 ```ts
 {
   model: string
+  provider: string                   // 固定した配信元
   deltas: Record<Axis, number>       // affectus に渡した値
   axes: Record<Axis, number>         // 適用後の8軸
   confidence?: Record<Axis, number>  // jev のみ
@@ -157,7 +161,12 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
 | モデル | 入力 | 出力 |
 |---|---|---|
 | `typesafe-ai/jev` | $0.042 / 1M tok | 無料 |
+| `anthropic/claude-haiku-4.5` | $1 / 1M tok | $5 / 1M tok |
 | `anthropic/claude-sonnet-5` | $2 / 1M tok | $10 / 1M tok |
+| `anthropic/claude-opus-5` | $5 / 1M tok | $25 / 1M tok |
+| `anthropic/claude-fable-5.1` | $10 / 1M tok | $50 / 1M tok |
+
+Anthropic 各モデルの単価は Gateway のモデル一覧による。Gateway は provider の料金をそのまま通し、上乗せをしないと明記している。`claude-fable-5.1` は TypeSafe が「238分の1」の比較対象に挙げたモデルなので、その主張を手元で再現するために選択肢に含める。
 
 コストは実測トークン数と上記定数の積として算出し、計算過程が追える形で保持する。
 
@@ -169,7 +178,7 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
 ┌─────────────────────────────────────────────────────┐
 │ シナリオ名 · run        turn 7 / 20        ◀ ❙❙ ▶  │
 ├──────────────┬──────────────────┬───────────────────┤
-│ LLM          │ user 発言        │ jev               │
+│ LLM + モデル選択│ user 発言      │ jev               │
 │ プルチックの輪│ agent 返答       │ プルチックの輪     │
 │ 2,140 ms     │                  │ 238 ms            │
 │ レイテンシバー│ 当時の自己申告    │ レイテンシバー      │
@@ -252,7 +261,7 @@ node --env-file=.env.local src/server.ts
 | `package.json` `package-lock.json` | `state/`（`setup.sh` が生成） |
 | `node_modules/`（約 23MB） | `.git/` `node_modules/.cache` |
 | `bin/affectus`（universal, 約 23MB） | `dist/` |
-| `README.md` `docs/` | |
+| `README.md` `CLAUDE.md` `docs/` | |
 
 `bin/affectus` は **arm64 と x86_64 の universal binary** とする。Apple Silicon と Intel のどちらの Mac でも動かすため。
 

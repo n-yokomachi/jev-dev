@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { feel, init, parseAxes, type AffectusEnv } from '../src/affectus.ts';
@@ -37,8 +37,9 @@ test('feel はグローバルフラグをサブコマンドの前に置く', asy
   assert.equal(axes.joy, 0.2);
 });
 
-test('実バイナリで init から feel まで通る', async () => {
+test('実バイナリで init から feel まで通る', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'affectus-test-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const env: AffectusEnv = {
     bin: resolve('bin/affectus'),
     config: join(dir, 'config.yaml'),

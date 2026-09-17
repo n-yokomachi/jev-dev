@@ -27,7 +27,13 @@ else
 fi
 
 # 3. affectus バイナリ
-if [ -x bin/affectus ]; then
+#    実行権限だけが落ちている状態を go install に落とさない。
+#    同梱バイナリがあるのに Go を要求しては、Node 24 だけで動く約束が崩れる。
+if [ -f bin/affectus ]; then
+  if [ ! -x bin/affectus ]; then
+    chmod +x bin/affectus
+    say "bin/affectus に実行権限を付けました"
+  fi
   say "bin/affectus あり、飛ばします"
 elif command -v go >/dev/null 2>&1; then
   say "go install で affectus を取得します"

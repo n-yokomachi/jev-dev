@@ -3,7 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
-AFFECTUS_SRC="${AFFECTUS_SRC:-/Users/Naoki/work/workshop/affectus}"
+# 既定は隣に置かれた affectus リポジトリ。このスクリプトは zip に同梱されて
+# 配布先でも実行されうるので、作者のマシン固有の絶対パスを既定にしない。
+AFFECTUS_SRC="${AFFECTUS_SRC:-$ROOT/../affectus}"
 NAME="jev-duel-$(date +%Y%m%d)"
 OUT="$ROOT/dist"
 STAGE="$OUT/$NAME"
@@ -20,6 +22,11 @@ if [ -d "$AFFECTUS_SRC" ] && command -v go >/dev/null 2>&1; then
   rm -rf "$TMP"
   echo "universal binary: $(lipo -archs "$STAGE/bin/affectus")"
 else
+  if [ ! -f bin/affectus ]; then
+    echo "エラー: affectus のソース（${AFFECTUS_SRC}）か go が無く、bin/affectus もありません。" >&2
+    echo "AFFECTUS_SRC に affectus リポジトリのパスを渡すか、bin/affectus を置いてください。" >&2
+    exit 1
+  fi
   echo "警告: affectus のソースか go が無いため、手元の bin/affectus をそのまま同梱します。"
   echo "警告: このバイナリは $(lipo -archs bin/affectus 2>/dev/null || uname -m) 専用です。"
   echo "警告: 他のアーキテクチャの Mac では動きません。可搬な zip が要るなら Go を入れて再実行してください。"
@@ -33,7 +40,8 @@ done
 cp -R node_modules "$STAGE/node_modules"
 
 # 3. 入ってはいけないものを落とす
-rm -f "$STAGE/.env" "$STAGE/.env.local"
+#    probe-jev.ts は動作確認用の使い捨てで、実行すると無条件に Gateway を叩く。
+rm -f "$STAGE/.env" "$STAGE/.env.local" "$STAGE/scripts/probe-jev.ts"
 rm -rf "$STAGE/state" "$STAGE/dist" "$STAGE/node_modules/.cache"
 
 # 4. 固める

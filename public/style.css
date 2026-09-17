@@ -228,20 +228,11 @@ body {
 }
 
 /*
- * 判定の生の入出力。参照用なのでパネルの一番下に置き、既定では畳んでおく。
- * 開いたままだと jev 側の入力だけで8問ぶんの問い文が並び、輪もゲージも返答も
- * 画面の外へ押し出す。
+ * 判定の生の入出力。畳まずに常に表示する。参照用なのでパネルの一番下、
+ * 輪・ゲージ・レイテンシ・生成された返答より下に置き、それらを押しのけない。
  */
 .raw { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
-
-.raw summary {
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: .12em;
-  cursor: pointer;
-}
-
-.raw summary:hover { color: var(--text); }
+.raw .raw-lb { text-align: center; }
 .raw .io-lb { text-align: left; margin: 8px 0 3px; }
 
 .io {
@@ -256,8 +247,11 @@ body {
   /* JSON は1行が長い。折り返さないとカラムを横に押し広げて3カラムが崩れる。 */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  /* 縦は自分の枠の中だけでスクロールさせる。パネルの丈は伸ばさない。 */
-  max-height: 16em;
+  /*
+   * 高さは固定し、縦は自分の枠の中だけでスクロールさせる。中身の長さで
+   * パネルの丈が変わらないので、ターンごとに下端が上下しない。
+   */
+  height: 11em;
   overflow: auto;
 }
 

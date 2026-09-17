@@ -123,19 +123,24 @@ test('両パネルの下部に判定の生の入出力を出す場所がある',
   }
 });
 
-test('生の入出力は既定で畳んである', async () => {
+test('生の入出力は畳まずに常に表示する', async () => {
   const html = await read('index.html');
-  // 開いたままだと jev 側の8問ぶんの問い文が輪・ゲージ・返答を画面外へ押し出す。
-  assert.equal((html.match(/<details class="raw">/g) ?? []).length, 2);
-  assert.doesNotMatch(html, /<details[^>]*\sopen/);
+  // 開いた時点で中身が読める状態にする。
+  assert.doesNotMatch(html, /<details/);
+  assert.doesNotMatch(html, /<summary/);
+  assert.equal((html.match(/<div class="raw">/g) ?? []).length, 2);
+  // 入力と出力はどちらがどちらか分かるようにする。
+  assert.equal((html.match(/モデルに渡した内容/g) ?? []).length, 2);
+  assert.equal((html.match(/返ってきた内容/g) ?? []).length, 2);
 });
 
-test('生の入出力の枠は溢れずに収まる', async () => {
+test('生の入出力の枠は高さ固定で、溢れずに収まる', async () => {
   const css = await read('style.css');
   // JSON は1行が長い。折り返しと縦スクロールが無いと3カラムを崩す。
   assert.match(css, /\.io \{[^}]*white-space: pre-wrap/s);
   assert.match(css, /\.io \{[^}]*overflow-wrap: anywhere/s);
-  assert.match(css, /\.io \{[^}]*max-height:/s);
+  // 高さを固定しないと、常時表示では中身の長さでパネルの丈が毎ターン変わる。
+  assert.match(css, /\.io \{[^}]*\n\s*height: /s);
   assert.match(css, /\.io \{[^}]*overflow: auto/s);
 });
 

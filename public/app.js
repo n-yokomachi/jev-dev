@@ -183,6 +183,14 @@ async function loadScenario(id) {
   const res = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
   state.scenario = await res.json();
   state.index = 0;
+  // 切替前のターンが飛行中なら、その結果は捨てる。
+  // 会話文も消す。残すと前シナリオの発言が新シナリオの表示として残る。
+  generation += 1;
+  el('turn-user').textContent = '—';
+  el('turn-agent').textContent = '—';
+  el('self-report').textContent = '当時の自己申告：—';
+  el('l1').textContent = '—';
+  for (const side of ['llm', 'jev']) clearSide(side);
   updateProgress();
 }
 
@@ -231,6 +239,8 @@ el('next').addEventListener('click', () => showTurn(state.index + 1));
 el('play').addEventListener('click', play);
 
 el('reset').addEventListener('click', async () => {
+  // 飛行中のターンが reset 後に解決してパネルを埋め直さないよう、先に世代を進める。
+  generation += 1;
   await fetch('/api/reset', { method: 'POST' });
   const zero = Object.fromEntries(AXES.map((a) => [a, 0]));
   drawWheel(el('wheel-llm'), zero);

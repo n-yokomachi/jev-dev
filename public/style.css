@@ -46,6 +46,17 @@ body {
 .topbar button:disabled { opacity: .4; cursor: default; }
 .transport { display: flex; gap: 6px; }
 
+.notice {
+  background: var(--panel);
+  border: 1px solid var(--llm);
+  border-radius: 8px;
+  color: var(--llm);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.notice[hidden] { display: none; }
+
 .cols { display: flex; gap: 12px; align-items: stretch; }
 
 .panel {
@@ -217,3 +228,5 @@ body {
   font: inherit;
   cursor: pointer;
 }
+
+.manual button:disabled { opacity: .4; cursor: default; }

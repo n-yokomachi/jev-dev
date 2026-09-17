@@ -18,6 +18,8 @@
   </span>
 </header>
 
+<div class="notice" id="notice" hidden></div>
+
 <main class="cols">
   <section class="panel llm" id="panel-llm">
     <div class="badge"><span class="n">LLM</span><span class="v" id="llm-model">—</span></div>
@@ -27,7 +29,7 @@
     <div class="track"><i id="llm-track"></i></div>
     <div class="meta"><span id="llm-tok">— tok</span><span id="llm-cost">—</span></div>
     <div class="gauges" id="llm-gauges"></div>
-    <div class="ghost">confidence に相当する出力なし</div>
+    <div class="ghost">確率分布を返さないため点線なし</div>
   </section>
 
   <section class="panel mid">
@@ -38,7 +40,7 @@
     <form class="manual" id="manual">
       <textarea id="manual-user" rows="2" placeholder="user の発言"></textarea>
       <textarea id="manual-agent" rows="2" placeholder="agent の返答"></textarea>
-      <button type="submit">この1ターンを判定</button>
+      <button type="submit" id="manual-submit">この1ターンを判定</button>
     </form>
   </section>
 
@@ -49,7 +51,7 @@
     <div class="track"><i id="jev-track"></i></div>
     <div class="meta"><span id="jev-tok">— tok</span><span id="jev-cost">—</span></div>
     <div class="gauges" id="jev-gauges"></div>
-    <div class="ghost">点線 = 軸ごとの confidence</div>
+    <div class="ghost">点線 = 軸ごとの確率分布から算出した確信度</div>
   </section>
 </main>
 

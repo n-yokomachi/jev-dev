@@ -26,7 +26,9 @@ export function drawWheel(container, values) {
 
   AXES.forEach((axis, i) => {
     const v = Math.min(1, Math.max(0, values[axis] ?? 0));
-    const r = 7 + max * v;
+    // 中心の最小半径 7 から、値 1.0 でちょうど目安の円（半径 max）に届く。
+    // 7 + max * v にすると 1.0 で円を 7px はみ出し、円が「満杯」を意味しなくなる。
+    const r = 7 + (max - 7) * v;
     const a1 = ((-90 + i * 45 - 21) * Math.PI) / 180;
     const a2 = ((-90 + i * 45 + 21) * Math.PI) / 180;
     const x1 = (c + r * Math.cos(a1)).toFixed(1);
@@ -47,6 +49,10 @@ const state = {
   scenario: null,
   index: 0,
   playing: false,
+  // 判定が飛行中かどうか。飛行中に別のターンを始めさせない。
+  // 捨てた判定のデルタもサーバー側では affectus に適用済みで、
+  // 見ていないターンのぶんが輪に積み上がり、課金も重複するため。
+  busy: false,
   maxLatency: 1,
   // 直近のレイテンシを両側ぶん保持する。最大値が更新されたとき、
   // 先に描き終えたバーも描き直さないと比率が嘘になるため。
@@ -54,6 +60,17 @@ const state = {
 };
 
 const el = (id) => document.getElementById(id);
+
+/** 画面に出す失敗の通知。console だけだと何も起きていないように見えるため。 */
+function showError(message) {
+  const box = el('notice');
+  box.textContent = message;
+  box.hidden = false;
+}
+
+function clearNotice() {
+  el('notice').hidden = true;
+}
 
 function renderGauges(container, deltas, confidence) {
   container.innerHTML = AXES.map((axis) => {
@@ -110,8 +127,24 @@ function l1(a, b) {
   return AXES.reduce((sum, axis) => sum + Math.abs((a?.[axis] ?? 0) - (b?.[axis] ?? 0)), 0);
 }
 
+/**
+ * サーバーの感情状態を読んで両方の輪を描く。
+ * 状態はファイルに永続するので、ゼロから描き始めると次の判定が返った瞬間に
+ * 蓄積値へ飛び、初期表示が状態を偽ることになる。
+ */
+async function drawStateWheels() {
+  const res = await fetch('/api/state');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const current = await res.json();
+  drawWheel(el('wheel-llm'), current.llm);
+  drawWheel(el('wheel-jev'), current.jev);
+}
+
 async function judge(side, turn) {
-  const body = side === 'llm' ? { ...turn, model: el('llm-pick').value } : turn;
+  // 選択肢の取得に失敗していれば model を送らず、サーバーの既定に任せる。
+  // 空文字を送るとサーバーが未知のモデルとして 400 で弾く。
+  const model = el('llm-pick').value;
+  const body = side === 'llm' && model ? { ...turn, model } : turn;
   const res = await fetch(`/api/judge/${side}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -128,7 +161,18 @@ async function judge(side, turn) {
 let generation = 0;
 
 async function runTurn(turn) {
+  setBusy(true);
+  try {
+    await runTurnInner(turn);
+  } finally {
+    // 失敗しても必ず解除する。解除し損ねると操作が二度と戻らない。
+    setBusy(false);
+  }
+}
+
+async function runTurnInner(turn) {
   const gen = ++generation;
+  clearNotice();
   el('turn-user').textContent = turn.user;
   el('turn-agent').textContent = turn.agent;
   el('self-report').textContent = turn.deltas
@@ -168,8 +212,15 @@ async function runTurn(turn) {
 function updateProgress() {
   const total = state.scenario?.turns.length ?? 0;
   el('progress').textContent = `turn ${total ? state.index + 1 : '—'} / ${total || '—'}`;
-  el('prev').disabled = state.index <= 0;
-  el('next').disabled = !state.scenario || state.index >= total - 1;
+  el('prev').disabled = state.busy || state.index <= 0;
+  el('next').disabled = state.busy || !state.scenario || state.index >= total - 1;
+  el('manual-submit').disabled = state.busy;
+}
+
+/** 飛行中かどうかを更新し、ボタンの活殺に反映する。黙ってクリックを無視しないため。 */
+function setBusy(value) {
+  state.busy = value;
+  updateProgress();
 }
 
 async function showTurn(index) {
@@ -181,6 +232,9 @@ async function showTurn(index) {
 
 async function loadScenario(id) {
   const res = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
+  // ok を見ないと、エラー応答の JSON がそのままシナリオとして state に入り、
+  // showTurn が turns を読んだところで初めて落ちる。
+  if (!res.ok) throw new Error(`シナリオ ${id} を読み込めません（HTTP ${res.status}）`);
   state.scenario = await res.json();
   state.index = 0;
   // 切替前のターンが飛行中なら、その結果は捨てる。
@@ -214,6 +268,9 @@ async function play() {
     return;
   }
 
+  // 止めるほうは飛行中でも受け付ける。始めるほうだけを止める。
+  if (state.busy) return;
+
   const run = ++playRun;
   state.playing = true;
   el('play').textContent = '❙❙';
@@ -238,22 +295,35 @@ async function play() {
   }
 }
 
-el('prev').addEventListener('click', () => showTurn(state.index - 1));
-el('next').addEventListener('click', () => showTurn(state.index + 1));
+el('prev').addEventListener('click', () => {
+  if (state.busy) return;
+  showTurn(state.index - 1);
+});
+el('next').addEventListener('click', () => {
+  if (state.busy) return;
+  showTurn(state.index + 1);
+});
 el('play').addEventListener('click', play);
 
 el('reset').addEventListener('click', async () => {
+  // 再生中なら止める。止めないと、消した直後の輪を再生ループが描き直す。
+  state.playing = false;
+  playRun += 1;
+  el('play').textContent = '▶';
   // 飛行中のターンが reset 後に解決してパネルを埋め直さないよう、先に世代を進める。
   generation += 1;
   await fetch('/api/reset', { method: 'POST' });
-  const zero = Object.fromEntries(AXES.map((a) => [a, 0]));
-  drawWheel(el('wheel-llm'), zero);
-  drawWheel(el('wheel-jev'), zero);
   state.maxLatency = 1;
   for (const side of ['llm', 'jev']) {
     // 破棄された実行は pending を外す処理まで到達しないので、ここで外す。
     el(`panel-${side}`).classList.remove('pending');
     clearSide(side);
+  }
+  // ゼロを描かず、リセット後の実際の状態を読み戻す。
+  try {
+    await drawStateWheels();
+  } catch (error) {
+    showError(`感情状態を読み戻せません: ${error.message}`);
   }
 });
 
@@ -263,26 +333,56 @@ el('scenario').addEventListener('change', async (event) => {
   state.playing = false;
   playRun += 1; // await 中の再生ループを失効させる
   el('play').textContent = '▶';
-  await loadScenario(event.target.value);
+  try {
+    await loadScenario(event.target.value);
+  } catch (error) {
+    showError(error.message);
+  }
 });
 
 el('manual').addEventListener('submit', async (event) => {
   event.preventDefault();
-  await runTurn({ user: el('manual-user').value, agent: el('manual-agent').value, deltas: null });
+  if (state.busy) return;
+  const user = el('manual-user').value.trim();
+  const agent = el('manual-agent').value.trim();
+  // 空のまま送ると、中身の無いターンで課金される判定を2本叩くことになる。
+  if (user === '' && agent === '') {
+    showError('user か agent のどちらかを入力してください');
+    return;
+  }
+  await runTurn({ user, agent, deltas: null });
 });
 
+// 状態を取りに行くまでの間だけゼロの輪を出す。すぐ実際の値で描き直す。
 const initial = Object.fromEntries(AXES.map((a) => [a, 0]));
 drawWheel(el('wheel-llm'), initial);
 drawWheel(el('wheel-jev'), initial);
+updateProgress();
 
-const { models, default: defaultModel } = await (await fetch('/api/models')).json();
-el('llm-pick').innerHTML = models
-  .map((m) => `<option value="${m}">${m.replace('anthropic/', '')}</option>`)
-  .join('');
-el('llm-pick').value = defaultModel;
+// 初期化の失敗は画面に出す。出さないと真っ白なまま理由が分からない。
+// 状態の取得とシナリオ一覧の取得は独立なので、片方が落ちても他方は進める。
+try {
+  await drawStateWheels();
+} catch (error) {
+  showError(`感情状態を取得できません: ${error.message}`);
+}
 
-const scenarios = await (await fetch('/api/scenarios')).json();
-el('scenario').innerHTML = scenarios
-  .map((s) => `<option value="${s.id}">${s.id}</option>`)
-  .join('');
-if (scenarios.length > 0) await loadScenario(scenarios[0].id);
+try {
+  const modelsRes = await fetch('/api/models');
+  if (!modelsRes.ok) throw new Error(`/api/models が HTTP ${modelsRes.status}`);
+  const { models, default: defaultModel } = await modelsRes.json();
+  el('llm-pick').innerHTML = models
+    .map((m) => `<option value="${m}">${m.replace('anthropic/', '')}</option>`)
+    .join('');
+  el('llm-pick').value = defaultModel;
+
+  const scenariosRes = await fetch('/api/scenarios');
+  if (!scenariosRes.ok) throw new Error(`/api/scenarios が HTTP ${scenariosRes.status}`);
+  const scenarios = await scenariosRes.json();
+  el('scenario').innerHTML = scenarios
+    .map((s) => `<option value="${s.id}">${s.id}</option>`)
+    .join('');
+  if (scenarios.length > 0) await loadScenario(scenarios[0].id);
+} catch (error) {
+  showError(`初期化に失敗しました: ${error.message}`);
+}

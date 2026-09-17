@@ -1167,7 +1167,8 @@ test('コストは入出力の両方を合算する', async () => {
     object: fakeObject(),
     usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
   }));
-  assert.equal(out.costUsd, 12);
+  // 既定は haiku-4.5（入力 $1 / 出力 $5）なので 1 + 5 = 6
+  assert.equal(out.costUsd, 6);
   assert.equal(out.model, 'anthropic/claude-haiku-4.5');
 });
 

@@ -1,0 +1,219 @@
+:root {
+  --bg: #07090c;
+  --panel: #0d1117;
+  --line: #1d2530;
+  --text: #c9d4e0;
+  --dim: #5b6673;
+  --llm: #ffb84d;
+  --jev: #4dffb8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.topbar select,
+.topbar button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.topbar button:hover { border-color: var(--dim); }
+.topbar button:disabled { opacity: .4; cursor: default; }
+.transport { display: flex; gap: 6px; }
+
+.cols { display: flex; gap: 12px; align-items: stretch; }
+
+.panel {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.panel.mid { flex: 1.1; display: flex; flex-direction: column; }
+.panel.llm { border-color: #4a3c22; }
+.panel.jev { border-color: #1f4a3a; }
+.panel.pending { opacity: .45; }
+
+.badge {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.badge .v { color: var(--dim); font-size: 9px; text-transform: none; }
+.llm .badge .n { color: var(--llm); }
+.jev .badge .n { color: var(--jev); }
+
+.pick {
+  width: 100%;
+  background: #0a0f15;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.wheel { display: flex; justify-content: center; margin-bottom: 10px; }
+
+.ms { font-size: 22px; text-align: center; margin-bottom: 4px; }
+.ms span { font-size: 11px; color: var(--dim); margin-left: 4px; }
+.llm .ms { color: var(--llm); }
+.jev .ms { color: var(--jev); }
+
+.track {
+  height: 6px;
+  border-radius: 3px;
+  background: #131a22;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.track i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  transition: width .35s ease-out;
+}
+
+.llm .track i { background: var(--llm); }
+.jev .track i { background: var(--jev); }
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dim);
+  font-size: 10px;
+  margin-bottom: 10px;
+}
+
+.axis {
+  display: grid;
+  grid-template-columns: 58px 1fr 38px;
+  gap: 6px;
+  align-items: center;
+  font-size: 9px;
+  margin-bottom: 4px;
+}
+
+.axis .nm { color: var(--dim); text-align: right; }
+.axis .val { color: var(--dim); }
+
+.gauge {
+  position: relative;
+  height: 9px;
+  background: #131a22;
+  border-radius: 2px;
+}
+
+.gauge::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--line);
+}
+
+.gauge b {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 2px;
+  transition: width .3s ease-out;
+}
+
+.llm .gauge b { background: var(--llm); }
+.jev .gauge b { background: var(--jev); }
+
+.gauge .conf {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  border-right: 2px dotted #93a1b0;
+}
+
+.turn {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.turn .who {
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.turn p { margin: 4px 0 0; line-height: 1.6; }
+
+.ghost {
+  color: var(--dim);
+  font-size: 9px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.diverge { text-align: center; margin: 10px 0; color: var(--dim); font-size: 10px; }
+.diverge b { display: block; color: var(--text); font-size: 20px; margin-top: 2px; }
+
+.manual { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+
+.manual textarea {
+  background: #0a0f15;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  font: inherit;
+  resize: vertical;
+}
+
+.manual button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  font: inherit;
+  cursor: pointer;
+}

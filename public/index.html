@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jev × LLM 判定対決</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <select id="scenario"></select>
+  <span id="progress">turn — / —</span>
+  <span class="transport">
+    <button id="prev">◀</button>
+    <button id="play">▶</button>
+    <button id="next">▶❙</button>
+    <button id="reset">reset</button>
+  </span>
+</header>
+
+<main class="cols">
+  <section class="panel llm" id="panel-llm">
+    <div class="badge"><span class="n">LLM</span><span class="v" id="llm-model">—</span></div>
+    <select id="llm-pick" class="pick"></select>
+    <div class="wheel" id="wheel-llm"></div>
+    <div class="ms" id="llm-ms">—<span>ms</span></div>
+    <div class="track"><i id="llm-track"></i></div>
+    <div class="meta"><span id="llm-tok">— tok</span><span id="llm-cost">—</span></div>
+    <div class="gauges" id="llm-gauges"></div>
+    <div class="ghost">confidence に相当する出力なし</div>
+  </section>
+
+  <section class="panel mid">
+    <div class="turn"><span class="who">user</span><p id="turn-user">シナリオを選んでください</p></div>
+    <div class="turn"><span class="who">agent</span><p id="turn-agent">—</p></div>
+    <div class="ghost" id="self-report">当時の自己申告：—</div>
+    <div class="diverge">L1 距離<br><b id="l1">—</b></div>
+    <form class="manual" id="manual">
+      <textarea id="manual-user" rows="2" placeholder="user の発言"></textarea>
+      <textarea id="manual-agent" rows="2" placeholder="agent の返答"></textarea>
+      <button type="submit">この1ターンを判定</button>
+    </form>
+  </section>
+
+  <section class="panel jev" id="panel-jev">
+    <div class="badge"><span class="n">jev</span><span class="v" id="jev-model">—</span></div>
+    <div class="wheel" id="wheel-jev"></div>
+    <div class="ms" id="jev-ms">—<span>ms</span></div>
+    <div class="track"><i id="jev-track"></i></div>
+    <div class="meta"><span id="jev-tok">— tok</span><span id="jev-cost">—</span></div>
+    <div class="gauges" id="jev-gauges"></div>
+    <div class="ghost">点線 = 軸ごとの confidence</div>
+  </section>
+</main>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

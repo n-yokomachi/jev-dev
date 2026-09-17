@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Axis, AxisMap } from './constants.ts';
+import { HttpError } from './http-error.ts';
 
 export interface Turn {
   turn: number;
@@ -39,8 +40,9 @@ export async function listScenarios(dir: string): Promise<ScenarioSummary[]> {
 }
 
 export async function loadScenario(dir: string, id: string): Promise<Scenario> {
+  // 受け取った id をそのまま返さない。要求が不正だという事実だけを伝える。
   if (id.includes('/') || id.includes('\\') || id.includes('..')) {
-    throw new Error(`invalid scenario id: ${id}`);
+    throw new HttpError(400, 'invalid scenario id');
   }
   const text = await readFile(join(dir, `${id}.jsonl`), 'utf8');
   return { id, turns: parseLines(text) };

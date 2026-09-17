@@ -96,3 +96,35 @@ test('probabilities が無ければ confidence は undefined', async () => {
   assert.equal(out.confidence.sorrow, undefined);
   assert.equal(out.deltas.sorrow, 0.5);
 });
+
+test('probabilities が空オブジェクトなら confidence は undefined', async () => {
+  const out = await judgeWithJev(turn, async () =>
+    fakeResult({ sorrow: { type: 'score', score: 3, probabilities: {} } }),
+  );
+  // 0 を入れると「確信度が最低」という別の主張になる
+  assert.equal(out.confidence.sorrow, undefined);
+});
+
+test('probabilities が全ゼロなら confidence は undefined', async () => {
+  const out = await judgeWithJev(turn, async () =>
+    fakeResult({
+      sorrow: { type: 'score', score: 3, probabilities: { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0 } },
+    }),
+  );
+  // エントロピー 0 から 1（確信度が最高）になってしまうのを防ぐ
+  assert.equal(out.confidence.sorrow, undefined);
+});
+
+test('応答の confidence が 0 ならそのまま 0 を通す', async () => {
+  const out = await judgeWithJev(turn, async () =>
+    fakeResult({ sorrow: { type: 'score', score: 3, probabilities: { '3': 1 }, confidence: 0 } }),
+  );
+  assert.equal(out.confidence.sorrow, 0);
+});
+
+test('costUsd は単価表に無いモデルで投げる', () => {
+  assert.throws(
+    () => costUsd('openai/gpt-4o', { inputTokens: 100, outputTokens: 100 }),
+    /openai\/gpt-4o/,
+  );
+});

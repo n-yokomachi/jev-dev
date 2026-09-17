@@ -72,6 +72,22 @@ export function costUsd(model: string, usage: Usage): number {
   );
 }
 
+/**
+ * probabilities から確信度を出す。分布として成立していなければ「不明」を返す。
+ *
+ * confidenceFromProbabilities は実在の分布に対しては正しいが、退化した入力では
+ * 意味の違う値を返してしまう。空なら 0（確信度が最低）、全ゼロならエントロピー 0 から
+ * 1（確信度が最高）になる。どちらも「不明」とは別の主張であり、画面にそう出てはならない。
+ */
+function confidenceFrom(probs: Record<string, number> | undefined): number | undefined {
+  if (!probs) return undefined;
+  const values = Object.values(probs);
+  if (values.length === 0) return undefined;
+  const total = values.reduce((sum, p) => sum + (Number.isFinite(p) ? p : 0), 0);
+  if (!(total > 0)) return undefined;
+  return confidenceFromProbabilities(values);
+}
+
 function normalizeUsage(usage: EvaluationResult['usage']): Usage {
   return {
     inputTokens: usage?.inputTokens ?? 0,
@@ -111,10 +127,7 @@ export async function judgeWithJev(
     // 将来 SDK が持つようになった場合に備えて ?? は残す。
     // probabilities はオプショナル。欠けている場合は「不明」として undefined を入れる。
     // 0 を入れると「確信度が最低」という別の意味になってしまう。
-    const probs = answer.probabilities;
-    confidence[axis] =
-      answer.confidence ??
-      (probs ? confidenceFromProbabilities(Object.values(probs)) : undefined);
+    confidence[axis] = answer.confidence ?? confidenceFrom(answer.probabilities);
   }
 
   const usage = normalizeUsage(result.usage);
@@ -189,7 +202,8 @@ export async function judgeWithLlm(
 
   const deltas = {} as AxisMap;
   for (const axis of AXES) {
-    deltas[axis] = clampDelta(result.object[axis] ?? 0);
+    // DeltaSchema が8軸すべてを必須にしており、generateObject が返す前に検証する。
+    deltas[axis] = clampDelta(result.object[axis]);
   }
 
   const usage = normalizeUsage(result.usage);

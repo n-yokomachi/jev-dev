@@ -9,6 +9,7 @@ import {
   type EvaluateFn, type GenerateObjectFn, type JudgeOutcome, type TurnInput,
 } from './judges.ts';
 import { feel, getAxes, resetState, type AffectusEnv } from './affectus.ts';
+import { HttpError } from './http-error.ts';
 
 export type Side = 'jev' | 'llm';
 
@@ -37,11 +38,21 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
+function errnoCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
+  const code = (error as { code: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+  } catch {
+    throw new HttpError(400, 'リクエストボディの JSON が不正です');
+  }
 }
 
 async function serveStatic(res: ServerResponse, pathname: string): Promise<void> {
@@ -56,6 +67,23 @@ async function serveStatic(res: ServerResponse, pathname: string): Promise<void>
   }
 }
 
+async function loadScenarioOrFail(deps: ServerDeps, encodedId: string): Promise<Scenario> {
+  let id: string;
+  try {
+    id = decodeURIComponent(encodedId);
+  } catch {
+    throw new HttpError(400, 'シナリオ ID が不正です');
+  }
+  try {
+    return await deps.loadScenario(deps.transcriptDir, id);
+  } catch (error) {
+    // ファイルが無いのは「見つからない」であってサーバーの故障ではない。
+    // ENOENT の message には絶対パスが載るので、そのままでは返さない。
+    if (errnoCode(error) === 'ENOENT') throw new HttpError(404, 'シナリオが見つかりません');
+    throw error;
+  }
+}
+
 async function handleJudge(
   deps: ServerDeps,
   side: Side,
@@ -66,13 +94,23 @@ async function handleJudge(
   const user = body.user;
   const agent = body.agent;
   if (typeof user !== 'string' || typeof agent !== 'string') {
-    sendJson(res, 400, { error: 'user と agent は必須の文字列です' });
-    return;
+    throw new HttpError(400, 'user と agent は必須の文字列です');
   }
+
+  let model: string | undefined;
+  if (side === 'llm' && body.model !== undefined) {
+    // 未知のモデル名を Gateway に素通しすると、課金される呼び出しを終えたあとで
+    // costUsd が単価表に無いと言って落ちる。呼ぶ前に弾く。
+    if (typeof body.model !== 'string' || !deps.llmModels.includes(body.model)) {
+      throw new HttpError(400, '未知のモデルです');
+    }
+    model = body.model;
+  }
+
   const turn: TurnInput = { user, agent };
   const outcome = side === 'jev'
     ? await deps.judgeJev(turn)
-    : await deps.judgeLlm(turn, typeof body.model === 'string' ? body.model : undefined);
+    : await deps.judgeLlm(turn, model);
   const axes = await deps.applyToAffectus(side, outcome.deltas);
   sendJson(res, 200, { ...outcome, axes });
 }
@@ -89,8 +127,7 @@ export function createServer(deps: ServerDeps) {
           return;
         }
         if (req.method === 'GET' && path.startsWith('/api/scenarios/')) {
-          const id = decodeURIComponent(path.slice('/api/scenarios/'.length));
-          sendJson(res, 200, await deps.loadScenario(deps.transcriptDir, id));
+          sendJson(res, 200, await loadScenarioOrFail(deps, path.slice('/api/scenarios/'.length)));
           return;
         }
         if (req.method === 'POST' && path === '/api/judge/jev') {
@@ -121,7 +158,14 @@ export function createServer(deps: ServerDeps) {
         }
         sendJson(res, 404, { error: 'not found' });
       } catch (error) {
-        sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+        if (error instanceof HttpError) {
+          sendJson(res, error.status, { error: error.message });
+          return;
+        }
+        // 想定外の失敗。message には絶対パスなどの内部情報が入りうるため、
+        // クライアントには固定文言だけを返し、実体はサーバー側のログに残す。
+        console.error(error);
+        sendJson(res, 500, { error: 'サーバー内部でエラーが発生しました' });
       }
     })();
   });

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type ServerDeps } from '../src/server.ts';
+import { loadScenario } from '../src/transcripts.ts';
 import { AXES, type AxisMap } from '../src/constants.ts';
 
 function zeroAxes(): AxisMap {
@@ -125,5 +126,119 @@ test('未知のパスは 404 を返す', async () => {
   const base = await listen(server);
   const res = await fetch(`${base}/api/nope`);
   assert.equal(res.status, 404);
+  shutdown(server);
+});
+
+/** 想定外の失敗は console.error に出る。テスト出力を汚さないよう黙らせる。 */
+async function quiet<T>(fn: () => Promise<T>): Promise<T> {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.error = original;
+  }
+}
+
+function enoent(path: string): NodeJS.ErrnoException {
+  const error: NodeJS.ErrnoException = new Error(
+    `ENOENT: no such file or directory, open '${path}'`,
+  );
+  error.code = 'ENOENT';
+  return error;
+}
+
+test('存在しないシナリオは 404 を返し、パスを漏らさない', async () => {
+  const server = createServer(deps({
+    loadScenario: async () => { throw enoent('/Users/someone/jev-dev/data/transcripts/nope.jsonl'); },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/scenarios/nope`);
+  const body = await res.json();
+  assert.equal(res.status, 404);
+  assert.ok(!body.error.includes('/'), `パスが漏れている: ${body.error}`);
+  shutdown(server);
+});
+
+test('壊れたシナリオ ID は 400 を返す', async () => {
+  const server = createServer(deps({
+    loadScenario: async () => { throw new Error('ここには来ないはず'); },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/scenarios/%`);
+  assert.equal(res.status, 400);
+  shutdown(server);
+});
+
+test('パス区切りを含むシナリオ ID は 400 を返す', async () => {
+  const server = createServer(deps({ loadScenario }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/scenarios/..%2Fsecret`);
+  assert.equal(res.status, 400);
+  shutdown(server);
+});
+
+test('壊れた JSON ボディは 400 を返す', async () => {
+  const server = createServer(deps());
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/judge/jev`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"user":',
+  });
+  assert.equal(res.status, 400);
+  shutdown(server);
+});
+
+test('想定外の失敗は 500 を返し、パスを漏らさない', async () => {
+  const server = createServer(deps({
+    listScenarios: async () => {
+      throw new Error("EACCES: permission denied, scandir '/Users/someone/jev-dev/data/transcripts'");
+    },
+  }));
+  const base = await listen(server);
+  const res = await quiet(() => fetch(`${base}/api/scenarios`));
+  const body = await res.json();
+  assert.equal(res.status, 500);
+  assert.ok(!body.error.includes('/Users'), `パスが漏れている: ${body.error}`);
+  assert.ok(!body.error.includes('EACCES'), `内部の詳細が漏れている: ${body.error}`);
+  shutdown(server);
+});
+
+test('llmModels に無いモデルは 400 で、判定を呼ばない', async () => {
+  let called = 0;
+  const server = createServer(deps({
+    judgeLlm: async () => { called += 1; throw new Error('呼ばれてはいけない'); },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/judge/llm`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', agent: 'a', model: 'anthropic/claude-opus-5' }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal(called, 0, '判定は呼ばれないこと');
+  shutdown(server);
+});
+
+test('llmModels にあるモデルはそのまま判定に渡る', async () => {
+  let seen: string | undefined = 'まだ';
+  const server = createServer(deps({
+    judgeLlm: async (_turn, model) => {
+      seen = model;
+      return {
+        model: model ?? '', provider: 'anthropic', deltas: zeroAxes(), confidence: {},
+        rawScore: {}, latencyMs: 1, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0,
+      };
+    },
+  }));
+  const base = await listen(server);
+  const res = await fetch(`${base}/api/judge/llm`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user: 'u', agent: 'a', model: 'anthropic/claude-sonnet-5' }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal(seen, 'anthropic/claude-sonnet-5');
   shutdown(server);
 });

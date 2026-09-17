@@ -1,5 +1,6 @@
+import { z } from 'zod';
 import {
-  AXES, JEV_MODEL, JEV_PROVIDER, PRICING, SCORE_LEVELS,
+  AXES, AXIS_JA, DEFAULT_LLM_MODEL, JEV_MODEL, JEV_PROVIDER, LLM_PROVIDER, PRICING, SCORE_LEVELS,
   axisInstruction, scoreToDelta,
   type Axis, type AxisMap,
 } from './constants.ts';
@@ -114,5 +115,80 @@ export async function judgeWithJev(
     latencyMs,
     usage,
     costUsd: costUsd(JEV_MODEL, usage),
+  };
+}
+
+export const DeltaSchema = z.object({
+  joy: z.number(),
+  acceptance: z.number(),
+  fear: z.number(),
+  surprise: z.number(),
+  sorrow: z.number(),
+  disgust: z.number(),
+  anger: z.number(),
+  expectancy: z.number(),
+});
+
+export type GenerateObjectFn = (options: {
+  model: string;
+  schema: typeof DeltaSchema;
+  prompt: string;
+  providerOptions: { gateway: { only: string[] } };
+}) => Promise<{
+  object: Record<string, number>;
+  usage?: { inputTokens?: number; outputTokens?: number };
+}>;
+
+export function llmInstruction(): string {
+  const lines = AXES.map((axis) => `- ${axis}（${AXIS_JA[axis]}）`).join('\n');
+  return [
+    '次の会話ターンを読み、agent の感情が各軸でどう動いたかを答えてください。',
+    '値は -1.0 から 1.0 の範囲で、上がったなら正、下がったなら負、変化がなければ 0 とします。',
+    '',
+    '軸:',
+    lines,
+  ].join('\n');
+}
+
+function clampDelta(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(-1, value));
+}
+
+export async function judgeWithLlm(
+  turn: TurnInput,
+  generateObjectFn: GenerateObjectFn,
+  model: string = DEFAULT_LLM_MODEL,
+): Promise<JudgeOutcome> {
+  const prompt = [
+    llmInstruction(),
+    '',
+    JSON.stringify({ user: turn.user, agent: turn.agent }, null, 2),
+  ].join('\n');
+
+  const started = performance.now();
+  const result = await generateObjectFn({
+    model,
+    schema: DeltaSchema,
+    prompt,
+    providerOptions: { gateway: { only: [LLM_PROVIDER] } },
+  });
+  const latencyMs = Math.round(performance.now() - started);
+
+  const deltas = {} as AxisMap;
+  for (const axis of AXES) {
+    deltas[axis] = clampDelta(result.object[axis] ?? 0);
+  }
+
+  const usage = normalizeUsage(result.usage);
+  return {
+    model,
+    provider: LLM_PROVIDER,
+    deltas,
+    confidence: {},
+    rawScore: {},
+    latencyMs,
+    usage,
+    costUsd: costUsd(model, usage),
   };
 }

@@ -2057,6 +2057,9 @@ const state = {
   index: 0,
   playing: false,
   maxLatency: 1,
+  // 直近のレイテンシを両側ぶん保持する。最大値が更新されたとき、
+  // 先に描き終えたバーも描き直さないと比率が嘘になるため。
+  latency: { llm: null, jev: null },
 };
 
 const el = (id) => document.getElementById(id);
@@ -2085,10 +2088,30 @@ function renderSide(side, result) {
   el(`${side}-tok`).textContent =
     `${result.usage.inputTokens} / ${result.usage.outputTokens} tok`;
   el(`${side}-cost`).textContent = `$${result.costUsd.toFixed(6)}`;
+  state.latency[side] = result.latencyMs;
   state.maxLatency = Math.max(state.maxLatency, result.latencyMs);
-  el(`${side}-track`).style.width = `${(result.latencyMs / state.maxLatency) * 100}%`;
+  redrawTracks();
   renderGauges(el(`${side}-gauges`), result.deltas, result.confidence);
   drawWheel(el(`wheel-${side}`), result.axes);
+}
+
+/** 両側のバーを現在の最大値で描き直す。片側だけ更新すると比率がずれる。 */
+function redrawTracks() {
+  for (const side of ['llm', 'jev']) {
+    const ms = state.latency[side];
+    el(`${side}-track`).style.width =
+      ms === null ? '0%' : `${(ms / state.maxLatency) * 100}%`;
+  }
+}
+
+/** ターンごとの表示だけを消す。輪は affectus の蓄積状態なので残す。 */
+function clearSide(side) {
+  state.latency[side] = null;
+  el(`${side}-ms`).innerHTML = '—<span>ms</span>';
+  el(`${side}-tok`).textContent = '— tok';
+  el(`${side}-cost`).textContent = '—';
+  el(`${side}-gauges`).innerHTML = '';
+  redrawTracks();
 }
 
 function l1(a, b) {
@@ -2115,8 +2138,10 @@ async function runTurn(turn) {
         .join(' / ')}`
     : '当時の自己申告：—';
   el('l1').textContent = '—';
-  el('panel-llm').classList.add('pending');
-  el('panel-jev').classList.add('pending');
+  for (const side of ['llm', 'jev']) {
+    el(`panel-${side}`).classList.add('pending');
+    clearSide(side);
+  }
 
   const results = {};
   const both = ['llm', 'jev'].map((side) =>
@@ -2128,6 +2153,7 @@ async function runTurn(turn) {
       .catch((error) => {
         el(`panel-${side}`).classList.remove('pending');
         el(`${side}-model`).textContent = `error: ${error.message}`;
+        // 数値はターン開始時に消してあるので、失敗しても前ターンの値は残らない
       }),
   );
 
@@ -2180,6 +2206,7 @@ el('reset').addEventListener('click', async () => {
   drawWheel(el('wheel-llm'), zero);
   drawWheel(el('wheel-jev'), zero);
   state.maxLatency = 1;
+  for (const side of ['llm', 'jev']) clearSide(side);
 });
 
 el('scenario').addEventListener('change', (event) => loadScenario(event.target.value));

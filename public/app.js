@@ -186,16 +186,44 @@ async function loadScenario(id) {
   updateProgress();
 }
 
+/**
+ * 再生の世代。await 中のループが復帰したとき、自分がまだ現役かを判断するのに使う。
+ * これが無いと、シナリオ切替で止めた直後に再生を押し直したとき、
+ * 中断中だった古いループが state.playing の true を見て生き返り、二重に進む。
+ */
+let playRun = 0;
+
 async function play() {
-  state.playing = !state.playing;
-  el('play').textContent = state.playing ? '❙❙' : '▶';
-  while (state.playing && state.scenario && state.index < state.scenario.turns.length) {
+  if (state.playing) {
+    // 走行中なら止めるだけ。世代を進めて、await 中のループを失効させる。
+    state.playing = false;
+    playRun += 1;
+    el('play').textContent = '▶';
+    return;
+  }
+
+  const run = ++playRun;
+  state.playing = true;
+  el('play').textContent = '❙❙';
+
+  while (
+    run === playRun &&
+    state.playing &&
+    state.scenario &&
+    state.index < state.scenario.turns.length
+  ) {
     await showTurn(state.index);
+    if (run !== playRun || !state.playing) break;
     if (state.index >= state.scenario.turns.length - 1) break;
     state.index += 1;
   }
-  state.playing = false;
-  el('play').textContent = '▶';
+
+  // 自分が現役のときだけ後片付けする。失効した古いループが
+  // 現役のループの状態やボタン表示を壊さないようにするため。
+  if (run === playRun) {
+    state.playing = false;
+    el('play').textContent = '▶';
+  }
 }
 
 el('prev').addEventListener('click', () => showTurn(state.index - 1));
@@ -215,6 +243,7 @@ el('scenario').addEventListener('change', async (event) => {
   // 再生中にシナリオを変えられたら止める。止めないと古い index のまま
   // 新シナリオを勝手に進み続け、再生ボタンの表示とも食い違う。
   state.playing = false;
+  playRun += 1; // await 中の再生ループを失効させる
   el('play').textContent = '▶';
   await loadScenario(event.target.value);
 });

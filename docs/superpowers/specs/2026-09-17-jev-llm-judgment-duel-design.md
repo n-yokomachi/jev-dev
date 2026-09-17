@@ -96,7 +96,9 @@ delta = (score / 4 - 0.5) * 2        // -1.0 〜 1.0
 
 ### LLM 側
 
-同一の state と同一の指示文を渡し、`generateObject` で8軸の数値（-1.0〜1.0）を一度に出力させる。既定モデルは `anthropic/claude-sonnet-5`。UI から `claude-haiku-4.5` / `claude-opus-5` / `claude-fable-5.1` に切り替えられる。
+同一の state と同一の指示文を渡し、`generateObject` で8軸の数値（-1.0〜1.0）を一度に出力させる。既定モデルは `anthropic/claude-haiku-4.5`。UI から `claude-sonnet-5` / `claude-opus-5` / `claude-fable-5.1` に切り替えられる。
+
+既定に最安の Haiku 4.5 を据えるのは、jev にとって一番厳しい相手だから。判定は8軸の短い構造化出力であり、フロンティアモデルを要する課題ではない。
 
 **配信元は `anthropic` に固定する。** AI Gateway は既定で稼働率とレイテンシを見てプロバイダ（`anthropic` / `bedrock` / `vertex` / `claudeaws`）を動的に選ぶため、固定しなければターンごとに配信元が変わりレイテンシの比較が成立しない。`providerOptions.gateway.only` で限定し、配信元を画面にも表示する。jev は `typesafe-ai` のみが配信するので固定は不要。
 

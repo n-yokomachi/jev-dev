@@ -809,7 +809,7 @@ export function scoreToDelta(score: number): number {
 }
 
 export const JEV_MODEL = 'typesafe-ai/jev';
-export const DEFAULT_LLM_MODEL = 'anthropic/claude-sonnet-5';
+export const DEFAULT_LLM_MODEL = 'anthropic/claude-haiku-4.5';
 
 /**
  * LLM 側の配信元を固定する。AI Gateway は既定で稼働率とレイテンシを見て
@@ -1166,7 +1166,7 @@ test('コストは入出力の両方を合算する', async () => {
     usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
   }));
   assert.equal(out.costUsd, 12);
-  assert.equal(out.model, 'anthropic/claude-sonnet-5');
+  assert.equal(out.model, 'anthropic/claude-haiku-4.5');
 });
 
 test('配信元を anthropic に固定して呼ぶ', async () => {
@@ -1343,7 +1343,7 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
     transcriptDir: '/tmp/does-not-matter',
     llmModels: ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'],
-    defaultLlmModel: 'anthropic/claude-sonnet-5',
+    defaultLlmModel: 'anthropic/claude-haiku-4.5',
     listScenarios: async () => [{ id: 'scenario-a', turnCount: 20 }],
     loadScenario: async (_dir, id) => ({ id, turns: [] }),
     judgeJev: async () => ({
@@ -1352,7 +1352,7 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
       usage: { inputTokens: 310, outputTokens: 24 }, costUsd: 0.000013,
     }),
     judgeLlm: async () => ({
-      model: 'anthropic/claude-sonnet-5', provider: 'anthropic', deltas: zeroAxes(), confidence: {},
+      model: 'anthropic/claude-haiku-4.5', provider: 'anthropic', deltas: zeroAxes(), confidence: {},
       rawScore: {}, latencyMs: 2140,
       usage: { inputTokens: 412, outputTokens: 96 }, costUsd: 0.00178,
     }),
@@ -1446,7 +1446,7 @@ test('GET /api/models は選択肢と既定モデルを返す', async () => {
   const base = await listen(server);
   const body = await (await fetch(`${base}/api/models`)).json();
   assert.ok(body.models.includes(body.default), 'default が models に含まれること');
-  assert.equal(body.default, 'anthropic/claude-sonnet-5');
+  assert.equal(body.default, 'anthropic/claude-haiku-4.5');
   shutdown(server);
 });
 
@@ -2201,7 +2201,7 @@ node --env-file=.env.local src/server.ts
 - jev 側の軸ゲージにだけ点線マーカーが出ている
 - 中央の L1 距離に数値が入る
 - 中央の「当時の自己申告」に transcripts の記録値が出ている
-- LLM パネル上部のモデル選択に4つのモデルが並び、既定が `claude-sonnet-5` になっている
+- LLM パネル上部のモデル選択に4つのモデルが並び、既定が `claude-haiku-4.5` になっている
 - 両パネルのモデル名の右に配信元が出ている（LLM 側は `anthropic`、jev 側は `typesafe-ai`）
 
 - [ ] **Step 3: 自動再生とリセットを確認**

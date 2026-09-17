@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 export const AXES = [
   'joy', 'acceptance', 'fear', 'surprise',
   'sorrow', 'disgust', 'anger', 'expectancy',
@@ -6,8 +8,7 @@ export const AXES = [
 export type Axis = (typeof AXES)[number];
 export type AxisMap = Record<Axis, number>;
 
-export const AFFECTUS_REPO =
-  process.env.AFFECTUS_REPO ?? '/Users/Naoki/work/workshop/affectus';
+export const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 export const TRANSCRIPT_DIR =
-  `${AFFECTUS_REPO}/examples/evaluation/_archive/plutchik-direct-20260810/transcripts`;
+  process.env.TRANSCRIPT_DIR ?? fileURLToPath(new URL('../data/transcripts', import.meta.url));

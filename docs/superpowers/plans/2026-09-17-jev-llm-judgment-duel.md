@@ -1992,7 +1992,9 @@ export function drawWheel(container, values) {
 
   AXES.forEach((axis, i) => {
     const v = Math.min(1, Math.max(0, values[axis] ?? 0));
-    const r = 7 + max * v;
+    // v=0 で 7（値ゼロでも花弁が見えるだけの最小半径）、v=1 で基準円とちょうど一致させる。
+    // 7 + max*v だと v=1 のとき円を 7px はみ出し、基準円が「振り切れた位置」を表さなくなる。
+    const r = 7 + (max - 7) * v;
     const a1 = ((-90 + i * 45 - 21) * Math.PI) / 180;
     const a2 = ((-90 + i * 45 + 21) * Math.PI) / 180;
     const x1 = (c + r * Math.cos(a1)).toFixed(1);

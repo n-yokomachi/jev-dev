@@ -2107,6 +2107,7 @@ function redrawTracks() {
 /** ターンごとの表示だけを消す。輪は affectus の蓄積状態なので残す。 */
 function clearSide(side) {
   state.latency[side] = null;
+  el(`${side}-model`).textContent = '—';
   el(`${side}-ms`).innerHTML = '—<span>ms</span>';
   el(`${side}-tok`).textContent = '— tok';
   el(`${side}-cost`).textContent = '—';
@@ -2125,11 +2126,18 @@ async function judge(side, turn) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${side}: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
+/**
+ * 表示中のターンの世代。next 連打などで runTurn が重なったとき、
+ * 古い方の結果が新しいターンの会話文の隣に描かれるのを防ぐ。
+ */
+let generation = 0;
+
 async function runTurn(turn) {
+  const gen = ++generation;
   el('turn-user').textContent = turn.user;
   el('turn-agent').textContent = turn.agent;
   el('self-report').textContent = turn.deltas
@@ -2147,10 +2155,12 @@ async function runTurn(turn) {
   const both = ['llm', 'jev'].map((side) =>
     judge(side, { user: turn.user, agent: turn.agent })
       .then((result) => {
+        if (gen !== generation) return; // 古いターンの結果は捨てる
         results[side] = result;
         renderSide(side, result);
       })
       .catch((error) => {
+        if (gen !== generation) return;
         el(`panel-${side}`).classList.remove('pending');
         el(`${side}-model`).textContent = `error: ${error.message}`;
         // 数値はターン開始時に消してあるので、失敗しても前ターンの値は残らない
@@ -2158,6 +2168,7 @@ async function runTurn(turn) {
   );
 
   await Promise.allSettled(both);
+  if (gen !== generation) return;
   if (results.llm && results.jev) {
     el('l1').textContent = l1(results.llm.deltas, results.jev.deltas).toFixed(2);
   }
@@ -2209,7 +2220,13 @@ el('reset').addEventListener('click', async () => {
   for (const side of ['llm', 'jev']) clearSide(side);
 });
 
-el('scenario').addEventListener('change', (event) => loadScenario(event.target.value));
+el('scenario').addEventListener('change', async (event) => {
+  // 再生中にシナリオを変えられたら止める。止めないと古い index のまま
+  // 新シナリオを勝手に進み続け、再生ボタンの表示とも食い違う。
+  state.playing = false;
+  el('play').textContent = '▶';
+  await loadScenario(event.target.value);
+});
 
 el('manual').addEventListener('submit', async (event) => {
   event.preventDefault();

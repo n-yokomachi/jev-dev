@@ -169,6 +169,9 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
 | GET | `/api/scenarios/:id` | 指定シナリオの全ターン |
 | GET | `/api/models` | LLM の選択肢と既定モデル |
 | POST | `/api/reply` | `{user, axes}` を受けて、その感情状態で色づけた返答を生成。応答は `{model, provider, reply, latencyMs, usage, costUsd}` |
+
+判定エンドポイントは、判定の**直前に読んだ現在の8軸**を入力に含め、応答にはモデルへ送った内容
+（`request`）と返ってきた内容（`response`）をそのまま載せる。
 | POST | `/api/judge/jev` | `{user}` を判定し affectus に適用 |
 | POST | `/api/judge/llm` | `{user, model?}` を判定し affectus に適用 |
 | GET | `/api/state` | 両状態の現在値（読み出し時の減衰を反映） |
@@ -282,6 +285,13 @@ jev 側のゲージには軸ごとの確信度を点線マーカーとして重�
 読み込み時に `GET /api/state` で両状態を取得して輪を描く。感情状態はファイルに永続するため、
 ゼロから描き始めると次の判定が返った瞬間に真の蓄積値へ飛び、初期表示が状態を偽ることになる。
 リセット後も同様に読み戻す。
+
+### 入出力の生表示
+
+左右のパネルの下部に、**判定の入力と出力の JSON をそのまま表示する。** 何を渡して何が返ったかを
+画面で確認できるようにするため。対象は判定のみで、**返答生成の入出力は表示しない**。
+
+API キーなど秘匿すべき値はこれらに含まれない。
 
 ### 操作
 

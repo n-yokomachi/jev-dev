@@ -248,10 +248,11 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   /*
-   * 高さは固定し、縦は自分の枠の中だけでスクロールさせる。中身の長さで
-   * パネルの丈が変わらないので、ターンごとに下端が上下しない。
+   * 高さは 13 行ぶんで固定し、縦は自分の枠の中だけでスクロールさせる。
+   * 中身の長さでパネルの丈が変わらないので、ターンごとに下端が上下しない。
+   * 内訳は 13 行 × line-height 1.5 に、上下の padding 6px と罫線 1px ずつ。
    */
-  height: 11em;
+  height: calc(13 * 1.5em + 14px);
   overflow: auto;
 }
 

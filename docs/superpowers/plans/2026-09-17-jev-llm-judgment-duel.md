@@ -18,7 +18,8 @@
 - 変換式: `delta = (score / 4 - 0.5) * 2`
 - affectus の呼び出しはグローバルフラグをサブコマンドの**前**に置く: `affectus --config P --state P <cmd> [args]`
 - `affectus feel` の出力は**小数2桁に丸めた1行 JSON**。`affectus get` はインデント付き JSON
-- 単価定数: `typesafe-ai/jev` は入力 $0.042/1M・出力無料、`anthropic/claude-sonnet-5` は入力 $2/1M・出力 $10/1M
+- 単価定数（1M トークンあたりの米ドル、入力 / 出力）: `typesafe-ai/jev` は $0.042 / 無料、`anthropic/claude-haiku-4.5` は $1 / $5、`anthropic/claude-sonnet-5` は $2 / $10、`anthropic/claude-opus-5` は $5 / $25、`anthropic/claude-fable-5.1` は $10 / $50
+- LLM 側の既定モデルは `anthropic/claude-haiku-4.5`、配信元は `anthropic` に固定
 - API キーは `.env.local` の `AI_GATEWAY_API_KEY`。コード・コミット・ログのいずれにも値を出さない
 - 配色（計器）: 背景 `#07090c` / パネル `#0d1117` / 罫線 `#1d2530` / 文字 `#c9d4e0` / 補助 `#5b6673` / LLM `#ffb84d` / jev `#4dffb8`
 - 依存に UI フレームワークとバンドラを追加しない

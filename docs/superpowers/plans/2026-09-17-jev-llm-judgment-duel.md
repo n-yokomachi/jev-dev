@@ -735,9 +735,12 @@ Expected: FAIL（`../src/confidence.ts` が存在しない）
 
 ```ts
 /**
- * 確率分布の尖り具合を 0〜1 の確信度に落とす。
- * 正規化エントロピーの補数を用いる独自定義であり、
- * TypeSafe が返す `confidence` の算出式（非公開）とは一致しない。
+ * 確率分布の尖り具合を 0〜1 の確信度に落とす。正規化エントロピーの補数を用いる独自定義。
+ *
+ * AI SDK 経由の評価回答は `score` と（オプショナルな）`probabilities` のみを持ち、
+ * confidence フィールドを持たない（型定義を検査して確認済み）。
+ * よって画面に出る確信度は常にこの関数の出力であり、
+ * TypeSafe が自社 API で返す `confidence` とは別物である。
  */
 export function confidenceFromProbabilities(probs: number[]): number {
   if (probs.length === 0) return 0;
@@ -1073,12 +1076,23 @@ export async function judgeWithJev(
 
   for (const axis of AXES) {
     const answer = result.answers[axis];
-    const score = answer?.score ?? 2;
-    rawScore[axis] = score;
-    deltas[axis] = Number(scoreToDelta(score).toFixed(4));
+    // SDK の契約は「質問ごとにちょうど1つの回答」「部分結果なし」を保証する。
+    // 破られた場合に既定値で埋めると「変化なし」と区別が付かず、比較データが静かに壊れる。
+    if (!answer || typeof answer.score !== 'number') {
+      throw new Error(`jev の応答に軸 ${axis} の score がありません`);
+    }
+    rawScore[axis] = answer.score;
+    deltas[axis] = Number(scoreToDelta(answer.score).toFixed(4));
+
+    // インストール済みの ai / @ai-sdk/provider の評価回答型に confidence は存在しない
+    // （型定義を検査して確認済み）。実運用では常に下の算出側が使われる。
+    // 将来 SDK が持つようになった場合に備えて ?? は残す。
+    // probabilities はオプショナル。欠けている場合は「不明」として undefined を入れる。
+    // 0 を入れると「確信度が最低」という別の意味になってしまう。
+    const probs = answer.probabilities;
     confidence[axis] =
-      answer?.confidence ??
-      confidenceFromProbabilities(Object.values(answer?.probabilities ?? {}));
+      answer.confidence ??
+      (probs ? confidenceFromProbabilities(Object.values(probs)) : undefined);
   }
 
   const usage = normalizeUsage(result.usage);

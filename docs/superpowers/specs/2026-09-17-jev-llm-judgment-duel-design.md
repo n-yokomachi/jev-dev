@@ -47,9 +47,11 @@ Node 24 は `.ts` の型注釈を実行時に除去するため、ビルド工�
 ブラウザが2本のリクエストを同時に発行し、先に返ったパネルから順に埋まる。これがそのままレースの表現になる。
 
 ```
-ターン { user, agent }
+user の発言 { user }
    ├─→ POST /api/judge/jev  → evaluate(Score×8) → 変換 → affectus --state jev.json feel
    └─→ POST /api/judge/llm  → generateObject(8軸) → そのまま → affectus --state llm.json feel
+        ↓ 判定が返ってから
+   └─→ POST /api/reply      → generateText → その状態で色づけた返答
 ```
 
 `affectus feel` は適用後の8軸 JSON を1行で標準出力に返すため、適用と読み出しが1コールで完結する。
@@ -166,9 +168,9 @@ examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
 | GET | `/api/scenarios` | シナリオ一覧（ファイル名と総ターン数） |
 | GET | `/api/scenarios/:id` | 指定シナリオの全ターン |
 | GET | `/api/models` | LLM の選択肢と既定モデル |
-| POST | `/api/reply` | `{user, axes}` を受けて、その感情状態で色づけた返答を生成 |
-| POST | `/api/judge/jev` | `{user, agent}` を判定し affectus に適用 |
-| POST | `/api/judge/llm` | `{user, agent, model?}` を判定し affectus に適用 |
+| POST | `/api/reply` | `{user, axes}` を受けて、その感情状態で色づけた返答を生成。応答は `{model, provider, reply, latencyMs, usage, costUsd}` |
+| POST | `/api/judge/jev` | `{user}` を判定し affectus に適用 |
+| POST | `/api/judge/llm` | `{user, model?}` を判定し affectus に適用 |
 | GET | `/api/state` | 両状態の現在値（読み出し時の減衰を反映） |
 | POST | `/api/reset` | 両状態を baseline に戻す |
 

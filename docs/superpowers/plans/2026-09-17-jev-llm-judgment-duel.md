@@ -37,6 +37,10 @@
 | `public/style.css` | 計器スタイル |
 | `public/app.js` | 描画・操作・2本同時リクエスト |
 | `scripts/probe-jev.ts` | 実応答の形を確認する使い捨てスクリプト |
+| `scripts/setup.sh` | 別マシンでの初期設定（冪等） |
+| `scripts/package.sh` | 配布 zip の作成 |
+| `data/transcripts/` | 取り込んだトランスクリプト 24 ファイル |
+| `README.md` | 別マシンでの手順 |
 
 ---
 
@@ -234,6 +238,264 @@ Expected: PASS（4件）
 ```bash
 git add package.json package-lock.json .gitignore src/constants.ts src/affectus.ts test/affectus.test.ts
 git commit -m "feat: affectus バイナリのラッパーを追加"
+```
+
+---
+
+### Task 1b: 可搬性
+
+別の Mac に持っていっても動くようにする。外部リポジトリの絶対パスへの依存を断ち、初期設定を1コマンドにまとめる。
+
+**Files:**
+- Create: `data/transcripts/*.jsonl`（24ファイル、コピー）, `scripts/setup.sh`, `README.md`
+- Modify: `src/constants.ts`（`AFFECTUS_REPO` を廃し、`TRANSCRIPT_DIR` と `PROJECT_ROOT` を差し替え）
+- Test: `test/data.test.ts`
+
+**Interfaces:**
+- Consumes: `AXES`, `Axis`, `AxisMap`（Task 1 の `src/constants.ts`）
+- Produces: `PROJECT_ROOT`, `TRANSCRIPT_DIR`（`src/constants.ts`。`AFFECTUS_REPO` は削除。Task 6 が `PROJECT_ROOT` を使う）
+
+- [ ] **Step 1: トランスクリプトを取り込む**
+
+```bash
+mkdir -p data/transcripts
+cp /Users/Naoki/work/workshop/affectus/examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl data/transcripts/
+ls data/transcripts/*.jsonl | wc -l   # 24 であること
+du -sh data/transcripts               # 448K 前後であること
+```
+
+- [ ] **Step 2: 失敗するテストを書く**
+
+`test/data.test.ts`:
+
+```ts
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { PROJECT_ROOT, TRANSCRIPT_DIR } from '../src/constants.ts';
+
+async function jsonlFiles(): Promise<string[]> {
+  return (await readdir(TRANSCRIPT_DIR)).filter((f) => f.endsWith('.jsonl')).sort();
+}
+
+test('取り込んだトランスクリプトが24ファイルある', async () => {
+  assert.equal((await jsonlFiles()).length, 24);
+});
+
+test('各ファイルが20ターン持つ', async () => {
+  for (const file of await jsonlFiles()) {
+    const lines = (await readFile(join(TRANSCRIPT_DIR, file), 'utf8'))
+      .split('\n')
+      .filter((line) => line.trim() !== '');
+    assert.equal(lines.length, 20, `${file} のターン数`);
+  }
+});
+
+test('PROJECT_ROOT と TRANSCRIPT_DIR は cwd に依存しない絶対パス', () => {
+  assert.ok(PROJECT_ROOT.startsWith('/'), PROJECT_ROOT);
+  assert.ok(TRANSCRIPT_DIR.startsWith('/'), TRANSCRIPT_DIR);
+});
+```
+
+- [ ] **Step 3: テストを実行して失敗を確認**
+
+Run: `node --test test/data.test.ts`
+Expected: FAIL（`PROJECT_ROOT` が `src/constants.ts` に無い）
+
+- [ ] **Step 4: `src/constants.ts` のパス定数を差し替える**
+
+Task 1 で書いた次の2つを削除する。
+
+```ts
+export const AFFECTUS_REPO =
+  process.env.AFFECTUS_REPO ?? '/Users/Naoki/work/workshop/affectus';
+
+export const TRANSCRIPT_DIR =
+  `${AFFECTUS_REPO}/examples/evaluation/_archive/plutchik-direct-20260810/transcripts`;
+```
+
+代わりに、ファイル冒頭に import を足し、同じ位置に次を置く。
+
+```ts
+import { fileURLToPath } from 'node:url';
+
+export const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+export const TRANSCRIPT_DIR =
+  process.env.TRANSCRIPT_DIR ?? fileURLToPath(new URL('../data/transcripts', import.meta.url));
+```
+
+`import.meta.url` を基準にすることで、どのディレクトリから起動してもパスが解決する。
+
+- [ ] **Step 5: テストを実行して通過を確認**
+
+Run: `node --test test/data.test.ts`
+Expected: PASS（3件）
+
+- [ ] **Step 6: `scripts/setup.sh` を書く**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+ROOT="$PWD"
+
+say() { printf '%s\n' "$*"; }
+
+# 1. Node のバージョン
+if ! command -v node >/dev/null 2>&1; then
+  say "node が見つかりません。Node 24 以上を入れてください: https://nodejs.org/"
+  exit 1
+fi
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$NODE_MAJOR" -lt 24 ]; then
+  say "Node 24 以上が必要です（現在 v$(node -p 'process.versions.node')）"
+  exit 1
+fi
+say "node v$(node -p 'process.versions.node') OK"
+
+# 2. 依存
+if [ -d node_modules ]; then
+  say "node_modules あり、飛ばします"
+else
+  say "npm ci を実行します"
+  npm ci
+fi
+
+# 3. affectus バイナリ
+if [ -x bin/affectus ]; then
+  say "bin/affectus あり、飛ばします"
+elif command -v go >/dev/null 2>&1; then
+  say "go install で affectus を取得します"
+  mkdir -p bin
+  GOBIN="$ROOT/bin" go install github.com/n-yokomachi/affectus/cmd/affectus@v0.4.0
+else
+  say "bin/affectus が無く、go も入っていません。"
+  say "Go を入れるか、リリースのバイナリを bin/affectus に置いてください:"
+  say "  https://github.com/n-yokomachi/affectus/releases"
+  exit 1
+fi
+
+# 4. Gatekeeper の隔離属性を外す
+xattr -dr com.apple.quarantine . 2>/dev/null || true
+
+# 5. 感情状態
+mkdir -p state
+if [ ! -f state/jev.json ]; then
+  bin/affectus --config state/config.yaml --state state/jev.json init --model plutchik
+  say "state/jev.json を作成しました"
+fi
+if [ ! -f state/llm.json ]; then
+  bin/affectus --config state/config.yaml --state state/llm.json init --model plutchik --force
+  say "state/llm.json を作成しました"
+fi
+
+# 6. API キー
+if [ ! -f .env.local ]; then
+  say ""
+  say "最後に API キーが要ります。次を実行して、貼り付けてください。"
+  say "  read -rs \"KEY?AI_GATEWAY_API_KEY: \" && printf 'AI_GATEWAY_API_KEY=%s\\n' \"\$KEY\" > .env.local && unset KEY"
+  say "  chmod 600 .env.local"
+  say ""
+  say "キーは Vercel の AI Gateway → API Keys で発行できます。"
+  exit 0
+fi
+
+say ""
+say "準備できました。起動するには:"
+say "  node --env-file=.env.local src/server.ts"
+```
+
+実行権限を付ける。
+
+```bash
+chmod +x scripts/setup.sh
+```
+
+- [ ] **Step 7: 冪等性を確認**
+
+Run: `./scripts/setup.sh && ./scripts/setup.sh`
+Expected: 2回目は「あり、飛ばします」が並び、状態ファイルが作り直されないこと。両実行とも最後に起動コマンドの案内が出ること。
+
+`state/jev.json` の中身が2回目の実行後も変わっていないことを確認する。
+
+```bash
+shasum state/jev.json && ./scripts/setup.sh >/dev/null && shasum state/jev.json
+```
+
+Expected: 2つのハッシュが一致
+
+- [ ] **Step 8: `README.md` を書く**
+
+````markdown
+# jev × LLM 判定対決ビューア
+
+同じ会話ターンを TypeSafe の `jev` と LLM の両方に判定させ、判定結果のズレと速度差を1画面で見せるデモ。判定は [affectus](https://github.com/n-yokomachi/affectus) の感情状態として別々に蓄積され、2つの状態が会話の進行につれて分岐していく様子をプルチックの輪で見られる。
+
+## 必要なもの
+
+- macOS（Apple Silicon / Intel のどちらでも）
+- Node 24 以上
+- Vercel AI Gateway の API キー
+
+配布 zip には affectus のバイナリと `node_modules` が入っているので、Go もネットワーク越しの依存解決も要らない。
+
+## 使い方
+
+```bash
+./scripts/setup.sh
+# 案内に従って .env.local に API キーを書く
+node --env-file=.env.local src/server.ts
+```
+
+ブラウザで http://localhost:8787 を開く。
+
+シナリオを選ぶと、会話が1ターンずつ流れる。`▶❙` で1ターン進め、`▶` で自動再生。中央の入力欄から任意のターンを判定させることもできる。
+
+## 画面の読み方
+
+- **左が LLM、右が jev。** 同じ会話ターンを同時に判定させ、先に返ったほうから埋まる
+- **プルチックの輪**は花弁の長さが各軸の強さ。左右で形が違えば、判定が食い違っている
+- **軸ゲージ**は中央線から右が正、左が負。jev 側の点線は軸ごとの確信度で、LLM 側にはこれに相当する出力が無い
+- **L1 距離**は両者のデルタがどれだけ離れているかの1数値
+
+## 構成
+
+| ディレクトリ | 内容 |
+|---|---|
+| `src/` | サーバーと判定ロジック |
+| `public/` | 画面 |
+| `data/transcripts/` | 再生用の会話ログ 24 シナリオ × 20 ターン |
+| `bin/` | affectus バイナリ |
+| `state/` | 2つの感情状態（`setup.sh` が生成） |
+
+## テスト
+
+```bash
+node --test test/
+```
+
+## 配布 zip を作る
+
+```bash
+./scripts/package.sh
+```
+
+`dist/` に zip ができる。API キーと感情状態は含まれない。
+````
+
+- [ ] **Step 9: 全テストを実行**
+
+Run: `node --test test/`
+Expected: PASS（7件。Task 1 の4件と Task 1b の3件）
+
+- [ ] **Step 10: commit**
+
+```bash
+git add data/transcripts scripts/setup.sh README.md src/constants.ts test/data.test.ts
+git commit -m "feat: 別マシンで動かすための取り込みと初期設定スクリプトを追加"
 ```
 
 ---
@@ -1015,13 +1277,22 @@ async function listen(server: ReturnType<typeof createServer>): Promise<string> 
   return `http://127.0.0.1:${address.port}`;
 }
 
+/**
+ * Node の global fetch は keep-alive で接続を保持するため、
+ * close() だけではテストプロセスが終了しない。先に接続を切る。
+ */
+function shutdown(server: ReturnType<typeof createServer>): void {
+  server.closeAllConnections();
+  server.close();
+}
+
 test('GET /api/scenarios が一覧を返す', async () => {
   const server = createServer(deps());
   const base = await listen(server);
   const res = await fetch(`${base}/api/scenarios`);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), [{ id: 'scenario-a', turnCount: 20 }]);
-  server.close();
+  shutdown(server);
 });
 
 test('POST /api/judge/jev は判定結果に適用後の軸を足して返す', async () => {
@@ -1037,7 +1308,7 @@ test('POST /api/judge/jev は判定結果に適用後の軸を足して返す', 
   assert.equal(body.latencyMs, 238);
   assert.equal(body.confidence.joy, 0.9);
   assert.equal(body.axes.joy, 0);
-  server.close();
+  shutdown(server);
 });
 
 test('POST /api/judge/llm は jev とは別の状態に適用する', async () => {
@@ -1052,7 +1323,7 @@ test('POST /api/judge/llm は jev とは別の状態に適用する', async () =
     body: JSON.stringify({ user: 'u', agent: 'a' }),
   });
   assert.deepEqual(seen, ['llm']);
-  server.close();
+  shutdown(server);
 });
 
 test('user が無い POST は 400 を返す', async () => {
@@ -1064,7 +1335,7 @@ test('user が無い POST は 400 を返す', async () => {
     body: JSON.stringify({ agent: 'a' }),
   });
   assert.equal(res.status, 400);
-  server.close();
+  shutdown(server);
 });
 
 test('POST /api/reset は両側をリセットする', async () => {
@@ -1074,7 +1345,7 @@ test('POST /api/reset は両側をリセットする', async () => {
   const res = await fetch(`${base}/api/reset`, { method: 'POST' });
   assert.equal(res.status, 200);
   assert.deepEqual(seen.sort(), ['jev', 'llm']);
-  server.close();
+  shutdown(server);
 });
 
 test('未知のパスは 404 を返す', async () => {
@@ -1082,7 +1353,7 @@ test('未知のパスは 404 を返す', async () => {
   const base = await listen(server);
   const res = await fetch(`${base}/api/nope`);
   assert.equal(res.status, 404);
-  server.close();
+  shutdown(server);
 });
 ```
 
@@ -1098,7 +1369,7 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { experimental_evaluate as evaluate, generateObject } from 'ai';
-import { DEFAULT_LLM_MODEL, TRANSCRIPT_DIR, type Axis, type AxisMap } from './constants.ts';
+import { DEFAULT_LLM_MODEL, PROJECT_ROOT, TRANSCRIPT_DIR, type AxisMap } from './constants.ts';
 import { listScenarios, loadScenario, type Scenario, type ScenarioSummary } from './transcripts.ts';
 import {
   judgeWithJev, judgeWithLlm,
@@ -1141,7 +1412,7 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 async function serveStatic(res: ServerResponse, pathname: string): Promise<void> {
   const rel = pathname === '/' ? 'index.html' : normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^\//, '');
   try {
-    const file = await readFile(join(process.cwd(), 'public', rel));
+    const file = await readFile(join(PROJECT_ROOT, 'public', rel));
     res.writeHead(200, { 'content-type': MIME[extname(rel)] ?? 'application/octet-stream' });
     res.end(file);
   } catch {
@@ -1219,9 +1490,9 @@ export function createServer(deps: ServerDeps) {
 
 function envFor(side: Side): AffectusEnv {
   return {
-    bin: join(process.cwd(), 'bin', 'affectus'),
-    config: join(process.cwd(), 'state', 'config.yaml'),
-    state: join(process.cwd(), 'state', `${side}.json`),
+    bin: join(PROJECT_ROOT, 'bin', 'affectus'),
+    config: join(PROJECT_ROOT, 'state', 'config.yaml'),
+    state: join(PROJECT_ROOT, 'state', `${side}.json`),
   };
 }
 
@@ -1255,7 +1526,7 @@ Expected: PASS（6件）
 - [ ] **Step 5: 全テストをまとめて実行**
 
 Run: `node --test test/`
-Expected: PASS（34件）
+Expected: PASS（37件）
 
 - [ ] **Step 6: commit**
 
@@ -1811,13 +2082,142 @@ node --env-file=.env.local src/server.ts
 - [ ] **Step 5: 全テストを実行**
 
 Run: `node --test test/`
-Expected: PASS（34件）
+Expected: PASS（37件）
 
 - [ ] **Step 6: commit**
 
 ```bash
 git add public/app.js
 git commit -m "feat: 判定の同時実行と結果表示を追加"
+```
+
+---
+
+### Task 9: 配布 zip
+
+「これさえあれば他の Mac でも動く」1ファイルを作る。
+
+**Files:**
+- Create: `scripts/package.sh`
+- Modify: `.gitignore`（`dist/` を追加）
+
+**Interfaces:**
+- Consumes: Task 1b の `scripts/setup.sh`（展開先で実行される）
+- Produces: `dist/jev-duel-<日付>.zip`
+
+- [ ] **Step 1: `.gitignore` に `dist/` を追加**
+
+```bash
+printf 'dist/\n' >> .gitignore
+```
+
+- [ ] **Step 2: `scripts/package.sh` を書く**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+ROOT="$PWD"
+AFFECTUS_SRC="${AFFECTUS_SRC:-/Users/Naoki/work/workshop/affectus}"
+NAME="jev-duel-$(date +%Y%m%d)"
+OUT="$ROOT/dist"
+STAGE="$OUT/$NAME"
+
+rm -rf "$STAGE" "$OUT/$NAME.zip"
+mkdir -p "$STAGE/bin"
+
+# 1. affectus を arm64 + x86_64 の universal binary にする
+if [ -d "$AFFECTUS_SRC" ] && command -v go >/dev/null 2>&1; then
+  TMP="$(mktemp -d)"
+  (cd "$AFFECTUS_SRC" && GOOS=darwin GOARCH=arm64 go build -o "$TMP/affectus-arm64" ./cmd/affectus)
+  (cd "$AFFECTUS_SRC" && GOOS=darwin GOARCH=amd64 go build -o "$TMP/affectus-amd64" ./cmd/affectus)
+  lipo -create -output "$STAGE/bin/affectus" "$TMP/affectus-arm64" "$TMP/affectus-amd64"
+  rm -rf "$TMP"
+  echo "universal binary: $(lipo -archs "$STAGE/bin/affectus")"
+else
+  echo "affectus のソースか go が無いため、手元の bin/affectus をそのまま同梱します"
+  cp bin/affectus "$STAGE/bin/affectus"
+fi
+
+# 2. 中身を集める
+for item in src public data scripts test docs package.json package-lock.json README.md; do
+  cp -R "$item" "$STAGE/"
+done
+cp -R node_modules "$STAGE/node_modules"
+
+# 3. 入ってはいけないものを落とす
+rm -f "$STAGE/.env" "$STAGE/.env.local"
+rm -rf "$STAGE/state" "$STAGE/dist" "$STAGE/node_modules/.cache"
+
+# 4. 固める
+(cd "$OUT" && zip -qr "$NAME.zip" "$NAME")
+rm -rf "$STAGE"
+
+echo "できました: dist/$NAME.zip ($(du -h "$OUT/$NAME.zip" | cut -f1))"
+```
+
+実行権限を付ける。
+
+```bash
+chmod +x scripts/package.sh
+```
+
+- [ ] **Step 3: zip を作って中身を確認**
+
+Run: `./scripts/package.sh`
+
+続けて中身を検査する。
+
+```bash
+Z=$(ls -t dist/*.zip | head -1)
+unzip -l "$Z" | grep -c "node_modules/"     # 0 より大きいこと
+unzip -l "$Z" | grep -c "data/transcripts/" # 25 前後（ディレクトリ行を含む）
+unzip -l "$Z" | grep "env.local" || echo "OK: .env.local は入っていない"
+unzip -l "$Z" | grep "state/"    || echo "OK: state/ は入っていない"
+```
+
+Expected: `.env.local` と `state/` が共に「入っていない」と出ること。
+
+- [ ] **Step 4: 別ディレクトリに展開して実際に動かす**
+
+これが可搬性の実証なので、必ず実行する。
+
+```bash
+Z=$(ls -t "$PWD"/dist/*.zip | head -1)
+NAME=$(basename "$Z" .zip)
+KEY_SRC="$PWD/.env.local"
+TMP=$(mktemp -d)
+cd "$TMP" && unzip -q "$Z" && cd "$NAME"
+./scripts/setup.sh
+```
+
+Expected: `node_modules あり、飛ばします` と `bin/affectus あり、飛ばします` が出て、`state/jev.json` と `state/llm.json` が作られ、`.env.local` が無いので鍵の書き方を案内して終了する。
+
+続けて鍵を置いて起動する。
+
+```bash
+cp "$KEY_SRC" .env.local
+node --env-file=.env.local src/server.ts &
+sleep 2
+curl -s localhost:8787/api/scenarios | head -c 120
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8787/
+kill %1
+```
+
+Expected: シナリオの JSON 配列が返り、`/` が `200` を返すこと。
+
+確認できたら後片付けする。
+
+```bash
+cd "$ROOT" && rm -rf "$TMP"
+```
+
+- [ ] **Step 5: commit**
+
+```bash
+git add scripts/package.sh .gitignore
+git commit -m "feat: 配布 zip を作るスクリプトを追加"
 ```
 
 ---
@@ -1842,6 +2242,13 @@ git commit -m "feat: 判定の同時実行と結果表示を追加"
 | L1 距離 | Task 8 |
 | 操作（選択・前後・再生・手入力・リセット） | Task 8 |
 | 制約「Gateway に confidence が無い可能性」 | Task 3（代替算出）／ Task 4（両対応）／ Task 4 Step 2（実応答の確認） |
+| 可搬性（絶対パスの排除・データの取り込み） | Task 1b |
+| `scripts/setup.sh`（6手順・冪等） | Task 1b Step 6, 7 |
+| README（別マシンでの手順） | Task 1b Step 8 |
+| 配布 zip の同梱物と除外物 | Task 9 Step 2, 3 |
+| universal binary（arm64 + x86_64） | Task 9 Step 2 |
+| Gatekeeper の隔離属性の除去 | Task 1b Step 6（`setup.sh` 内） |
+| 展開先で実際に動くことの確認 | Task 9 Step 4 |
 
 未カバーの項目なし。
 

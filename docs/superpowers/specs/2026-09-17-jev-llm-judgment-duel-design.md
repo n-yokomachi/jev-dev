@@ -4,6 +4,8 @@
 
 同一の会話ターンを TypeSafe の `jev` と LLM の両方に判定させ、**判定結果のズレと速度差を1画面で見せる**デモを作る。判定結果は affectus の感情状態として蓄積し、2つの状態が会話の進行につれてどう分岐するかを可視化する。
 
+完成形は**別の Mac に展開すれば動く zip** とする。受け取り側に必要なのは Node 24 と AI Gateway の API キーだけで、Go のツールチェーンもネットワーク越しの依存解決も要らない。
+
 ## 非目的
 
 - 「jev が affectus の判定に使えるか」の可否判断。本設計は比較結果を提示するところまでを担い、採否は扱わない
@@ -24,6 +26,10 @@ jev-dev/
 │   ├── transcripts.ts    JSONL 読み込み
 │   └── constants.ts      問い・軸定義・単価・変換係数
 ├── public/               index.html / app.js / style.css
+├── data/transcripts/     取り込んだトランスクリプト 24 ファイル
+├── scripts/
+│   ├── setup.sh          別マシンでの初期設定
+│   └── package.sh        配布 zip の作成
 └── state/
     ├── config.yaml       model: plutchik
     ├── jev.json          jev 判定を適用する感情状態
@@ -98,15 +104,18 @@ transcripts には当時の自己申告デルタが `deltas` として記録さ�
 
 ## データソース
 
-`affectus` リポジトリの以下を読み取り専用で参照する。
+`affectus` リポジトリの以下を**このプロジェクトに取り込む**。
 
 ```
 examples/evaluation/_archive/plutchik-direct-20260810/transcripts/*.jsonl
+   → data/transcripts/*.jsonl
 ```
 
-24ファイル、各20ターン。1行1ターンの JSONL で、`turn` / `phase` / `user` / `agent` / `deltas` / `axes` を持つ。`phase` は `negative` / `positive` で、シナリオ中で転換する。
+24ファイル・計 448KB、各20ターン。1行1ターンの JSONL で、`turn` / `phase` / `user` / `agent` / `deltas` / `axes` を持つ。`phase` は `negative` / `positive` で、シナリオ中で転換する。
 
-パスは `constants.ts` の定数とし、環境変数 `AFFECTUS_REPO` で上書きできるようにする。
+取り込む理由は可搬性。外部リポジトリの絶対パスを参照したままでは別のマシンで動かない。容量が小さいため複製の不利益は無い。
+
+既定のパスは `./data/transcripts`。環境変数 `TRANSCRIPT_DIR` で上書きできる。
 
 中央パネルには手入力欄も置き、任意のターンを判定させられる。
 
@@ -215,15 +224,50 @@ jev 側のゲージには軸ごとの `confidence` を点線マーカーとし�
 ## 実行手順
 
 ```bash
-# affectus バイナリの用意（一度だけ）
-cd <affectus リポジトリ> && go build -o <jev-dev>/bin/affectus ./cmd/affectus
+./scripts/setup.sh                        # 依存・バイナリ・感情状態を揃える
+# .env.local に AI_GATEWAY_API_KEY を書く
+node --env-file=.env.local src/server.ts
+```
 
-# 感情状態の初期化（一度だけ）
-bin/affectus --config state/config.yaml --state state/jev.json init --model plutchik
-bin/affectus --config state/config.yaml --state state/llm.json init --model plutchik --force
+`scripts/setup.sh` が行うこと:
 
-# 起動
-npm install
+1. Node のバージョンを確認する（24 未満なら中止）
+2. `node_modules` が無ければ `npm ci`
+3. `bin/affectus` が無ければ用意する。同梱バイナリがあればそれを使い、無ければ `GOBIN=$PWD/bin go install github.com/n-yokomachi/affectus/cmd/affectus@v0.4.0`
+4. `xattr -dr com.apple.quarantine .` で Gatekeeper の隔離属性を外す
+5. `state/jev.json` と `state/llm.json` が無ければ初期化する
+6. `.env.local` が無ければ、鍵の書き方を案内して終了する
+
+冪等に作る。既に揃っているものは飛ばす。
+
+## 配布
+
+`scripts/package.sh` が `dist/jev-duel-<日付>.zip` を作る。
+
+| 同梱する | 同梱しない |
+|---|---|
+| `src/` `public/` `data/transcripts/` `scripts/` | `.env.local`（API キー） |
+| `package.json` `package-lock.json` | `state/`（`setup.sh` が生成） |
+| `node_modules/`（約 23MB） | `.git/` `node_modules/.cache` |
+| `bin/affectus`（universal, 約 23MB） | `dist/` |
+| `README.md` `docs/` | |
+
+`bin/affectus` は **arm64 と x86_64 の universal binary** とする。Apple Silicon と Intel のどちらの Mac でも動かすため。
+
+```bash
+GOOS=darwin GOARCH=arm64 go build -o build/affectus-arm64 ./cmd/affectus
+GOOS=darwin GOARCH=amd64 go build -o build/affectus-amd64 ./cmd/affectus
+lipo -create -output bin/affectus build/affectus-arm64 build/affectus-amd64
+```
+
+受け取り側に必要なのは **Node 24 と AI Gateway の API キーだけ**。Go もネットワークも要らない。
+
+展開後の手順:
+
+```bash
+unzip jev-duel-<日付>.zip && cd jev-duel-<日付>
+./scripts/setup.sh
+# 案内に従って .env.local に鍵を書く
 node --env-file=.env.local src/server.ts
 ```
 
@@ -239,6 +283,9 @@ API キーは `.env.local` の `AI_GATEWAY_API_KEY` から読む。
 - **問い文の言語の影響は未検証**。日本語で問いを立てるが、jev の言語ごとの性能差は公開情報が無い
 - **減衰は読み出し時に適用される**。再生中に間が空くと両状態とも baseline に寄るが、同じだけ寄るため比較の公平性は保たれる
 - **Gateway 経由の応答に `confidence` が含まれない可能性**。Vercel のドキュメントに載る応答例には `confidence` フィールドが無く、`probabilities` のみ。実装時に実応答を確認し、含まれない場合は `probabilities` から算出する
+- **zip を展開したバイナリは Gatekeeper に隔離される**。ダウンロード由来の `com.apple.quarantine` 属性が付くと「開発元を確認できないため開けません」となる。`setup.sh` が属性を除去する。署名と公証は行わない
+- **Node は同梱しない**。受け取り側に Node 24 以上が入っていることを前提とする。`setup.sh` がバージョンを確認して、満たさなければ中止する
+- **API キーは配布物に含めない**。受け取り側が自分のキーを `.env.local` に置く
 
 ## 出典
 

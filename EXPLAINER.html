@@ -264,7 +264,7 @@
     </div>
 
     <figure class="fig">
-      <svg viewBox="0 0 660 308" role="img"
+      <svg viewBox="0 0 660 262" role="img"
         aria-label="affectus の図解。左から変動値を入れ、中央の入れ物が8軸の数値を保持し、右へ現在値を取り出す">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
@@ -278,6 +278,10 @@
         <rect class="port" x="8" y="110" width="136" height="58" rx="8"/>
         <text class="mono" x="76" y="136" font-size="14" text-anchor="middle">feel</text>
         <text class="dim" x="76" y="155" font-size="11" text-anchor="middle">変動値 −1.0〜1.0</text>
+        <text class="mono" x="76" y="193" font-size="12" text-anchor="middle"
+          ><tspan fill="var(--llm)">LLM</tspan><tspan class="dim"> / </tspan
+          ><tspan fill="var(--jev)">jev</tspan></text>
+        <text class="dim" x="76" y="211" font-size="11" text-anchor="middle">感情の変動を判定</text>
         <path class="wire" d="M150,139 L202,139" marker-end="url(#ah)"/>
 
         <!-- 入れ物 -->
@@ -332,19 +336,18 @@
         <rect class="port" x="514" y="110" width="138" height="58" rx="8"/>
         <text class="mono" x="583" y="136" font-size="14" text-anchor="middle">get</text>
         <text class="dim" x="583" y="155" font-size="11" text-anchor="middle">現在値 0.0〜1.0</text>
+        <text class="mono" x="583" y="193" font-size="12" text-anchor="middle"
+          fill="var(--llm)">LLM</text>
+        <text class="dim" x="583" y="211" font-size="11" text-anchor="middle">その感情で返答を生成</text>
 
-        <!-- 減衰 -->
-        <path class="wire" stroke-dasharray="3 3"
-          d="M260,266 C260,286 400,286 400,266" marker-end="url(#ah)"/>
-        <text class="dim" x="330" y="296" font-size="11" text-anchor="middle">
-          読み出すたびに baseline へ少し戻る（減衰）
-        </text>
       </svg>
       <figcaption>
         感情の入れ物がひとつあって、そこに数値を出し入れするだけの道具です。
         入れるのは「この発言でどう動くか」の変動値、取り出すのは積み上がった現在値。
         <strong>どう動かすかを決めるのも、取り出した数値を言葉に変えるのも外側の仕事</strong>で、
         affectus はその間で状態を持ち続けます。
+        このデモでは、入れる側を LLM と jev の両方にやらせて比べ、
+        取り出して返答を書く側は両方とも同じ LLM に固定しています。
       </figcaption>
     </figure>
   </section>
